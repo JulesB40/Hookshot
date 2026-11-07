@@ -5,10 +5,10 @@ connected during development. No game launch, correct game frame or playable
 performance has been verified.** This branch is a development checkpoint, not a
 completed Android port.
 
-The v0.5 checkpoint replaces the failing 64-bit GPU page-index chain with
-32-bit-word arithmetic and expands the on-device test to 64 cases. The v0.4
-CPU high-address check passed, but its GPU page-index test failed. The user's v0.3 screenshot confirms
-that the authored Eden warp-partition compute test passes on Adreno 750. See [PORTING_PROGRESS.md](PORTING_PROGRESS.md).
+The v0.6 checkpoint adds pure32/bridge64 GPU lookup traces and a Copy report
+button. The v0.5 screenshot still shows a GPU page-index failure; the exact cause
+is unresolved. Authored warp and CPU high-address checks pass on the phone.
+See [PORTING_PROGRESS.md](PORTING_PROGRESS.md).
 
 ## What the APK does
 
@@ -124,8 +124,8 @@ do not uninstall an existing app as a workaround.
    **Custom Turnip loading is not implemented**; setting a driver environment
    variable in Termux does not change the driver of this APK.
 
-For v0.5, also record `Compact page-index GPU test`, `Compact high-address CPU
-test` and `Compact guest arena`. Install as an update using the original key;
+For v0.6, tap **Copy report** and paste the complete result, including both
+`Compact lookup pure32/bridge64 GPU test` summaries and `Lookup ... heap trace`. Install as an update using the original key;
 do not uninstall or clear data. The compact layout is experimental and game
 execution remains unverified.
 

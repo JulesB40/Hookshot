@@ -63,12 +63,15 @@ def main():
         print(f'PASS: real Eden emitters generated {lanes}-lane partition test ({n} words); GPU execution not tested')
     layout=dll.hookshot_vk_layout_test_spirv
     layout.argtypes=emit.argtypes;layout.restype=ctypes.c_size_t
-    n=layout(None,0,0);assert 5<n<100000
-    words=(ctypes.c_uint32*n)();assert layout(words,n,0)==n
-    path=out/'layout.spv';path.write_bytes(bytes(words))
-    if a.spirv_val: subprocess.run([str(a.spirv_val),'--target-env','vulkan1.1',str(path)],check=True)
     from check_layout_spirv import check_layout
-    check_layout(path,a.spirv_headers/'include/spirv/unified1/spirv.core.grammar.json',a.android_layout)
-    print('PASS: production guest-page lookup emitter generated layout shader; GPU execution not tested')
+    for mode in (0,1):
+        n=layout(None,0,mode);assert 5<n<100000
+        words=(ctypes.c_uint32*n)();assert layout(words,n,mode)==n
+        path=out/f'layout{mode}.spv';path.write_bytes(bytes(words))
+        if a.spirv_val: subprocess.run([str(a.spirv_val),'--target-env','vulkan1.1',str(path)],check=True)
+        check_layout(path,a.spirv_headers/'include/spirv/unified1/spirv.core.grammar.json',a.android_layout,bool(mode))
+        fingerprint=2166136261
+        for word in words: fingerprint=((fingerprint^word)*16777619)&0xffffffff
+        print(f'PASS: lookup mode {mode}, {n} words, fingerprint {fingerprint:#x}; GPU execution not tested')
     print('Shaders:',out)
 if __name__=='__main__': main()

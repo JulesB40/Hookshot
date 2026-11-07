@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="dev.julesb40.hookshot.experimental" android:versionCode="5" android:versionName="0.5-page-index-fix">
+    package="dev.julesb40.hookshot.experimental" android:versionCode="6" android:versionName="0.6-lookup-trace">
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="35" />
     <uses-feature android:name="android.hardware.vulkan.level" android:version="1" android:required="true" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />

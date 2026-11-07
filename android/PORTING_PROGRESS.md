@@ -1,4 +1,51 @@
-# Android checkpoint v0.5 — page-index fix candidate
+# Android checkpoint v0.6 — isolate the failing lookup
+
+The user supplied a v0.5 screenshot at 22:26: compact lookup still FAILs at row 2,
+heap address `0x1000000000`, hit 1, index `0xff` instead of 0. CPU high-address,
+owned staging and authored warp checks remain PASS. The v0.5 change is therefore
+not an accepted device fix; the precise root cause remains unknown.
+
+v0.6 changes the test to expose intermediate results instead of trying another
+unverified arithmetic rewrite:
+
+- `EmitGuestPageLookup32` contains the existing 32-bit-word lookup. Production's
+  `EmitGuestPageLookup` calls it with bitcast words and widens its index, preserving
+  the same intended behavior. This refactor does not claim production compatibility.
+- A **pure32** shader has no Int64 type/capability and calls the helper directly.
+- A **bridge64** shader additionally tests the production 64-bit input bitcast,
+  index widening/narrowing and high word. Both run the same 64 address cases.
+- Each row returns 16 words: unchanged input, hit flag, direct index, bridge
+  index, bitcast roundtrip, high-word subtraction and shift, low-word page bits,
+  selected constant, fixed literals, invocation ID and a final marker.
+- The APK prints the heap-base trace, the first three mismatching rows, full
+  64-row match counts and a fingerprint/word count of the actual emitted shader.
+  Success requires all 16 words to match on every row, not just a valid hit flag.
+- **Copy report** copies the displayed diagnostic to Android's clipboard on tap.
+  This helps provide complete traces without a PC or file-storage permissions.
+
+## Build/test status and phone procedure
+
+The renderer links 184 sources for Android ARM64; JNI C builds with warnings as
+errors. Both authored diagnostic shaders validate with `spirv-val`, and host
+semantic checks cover 3,088 boundary/random addresses per mode. The pure32 check
+asserts no 64-bit integer type is declared. Host HLE memory and 14 safety/cache
+regressions still pass. These results do not establish GPU execution.
+
+Use the existing phone-only Termux build commands in README.md, or install the
+signed v0.6 APK as an update with the original development key. Do not uninstall
+or clear app data. Open it, wait for the report, tap **Copy report**, then paste
+the report into the conversation. Important lines start with `Lookup` and
+`Compact lookup pure32/bridge64 GPU test`.
+
+No automatic report transmission, game import or new permission is added.
+Clipboard interaction and the new tests have not been exercised on the phone
+by the developer. Physical GPU page-pointer dereference and guest-pool ownership
+remain unverified. The full game runtime, task/mesh fallback, guest HID and audio
+remain incomplete. A diagnostic PASS must not be reported as a game launch.
+
+---
+
+# Historical Android checkpoint v0.5 — page-index fix candidate
 
 The user's v0.4 screenshot shows the compact high-address CPU test and page
 zeroing PASS, and the existing warp/staging checks still PASS. However the GPU

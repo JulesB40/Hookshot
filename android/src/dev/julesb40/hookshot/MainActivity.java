@@ -40,12 +40,24 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
             }
         });
         TextView title = new TextView(this);
-        title.setText("Hookshot • Android ARM64 v0.5\nGame runtime not ported — this APK tests graphics and input only.");
+        title.setText("Hookshot • Android ARM64 v0.6\nGame runtime not ported — this APK tests graphics and input only.");
         title.setTextSize(18);
         root.addView(title);
         input = new TextView(this);
         input.setText("Touch a button or connect a controller to test input.");
-        root.addView(input);
+        LinearLayout inputRow = new LinearLayout(this);
+        inputRow.addView(input, new LinearLayout.LayoutParams(0, -2, 1));
+        Button copy = new Button(this);
+        copy.setText("Copy report");
+        copy.setOnClickListener(new android.view.View.OnClickListener() {
+            @Override public void onClick(android.view.View view) {
+                android.content.ClipboardManager clipboard = (android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Hookshot diagnostic", status.getText()));
+                android.widget.Toast.makeText(MainActivity.this, "Report copied", android.widget.Toast.LENGTH_SHORT).show();
+            }
+        });
+        inputRow.addView(copy);
+        root.addView(inputRow);
         LinearLayout controls = new LinearLayout(this);
         for (final String name : new String[]{"←", "↑", "↓", "→", "A", "B", "X", "Y", "L", "R", "+"}) {
             Button button = new Button(this);

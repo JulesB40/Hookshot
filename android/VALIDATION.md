@@ -1,6 +1,36 @@
 # Validation — 2026-11-07
 
-## v0.5 build checkpoint
+## v0.6 build checkpoint
+
+- ARM64 renderer: 184 real sources linked with `--no-undefined`. JNI C with
+  `-Wall -Wextra -Werror`, Java compilation, DEX and APK packaging pass.
+- APK: same development certificate/package, version code 6, zero permissions;
+  signature verified. **Phone installation/execution and Copy report: pending.**
+- Both lookup modes validate under Vulkan 1.1. The actual generated shader is
+  evaluated on 3,088 boundary/random inputs per mode; all 16-word traces agree
+  with the independent CPU reference. The pure32 mode declares no 64-bit type.
+- Existing 32/64/128-lane warp shaders still validate. Host HLE allocation tests,
+  Android compilation and 14 existing safety/cache regressions pass.
+- Production GPU lookup remains **unverified/failing in the last observed v0.5
+  run**. v0.6 is diagnostic instrumentation, not a verified fix.
+
+APK SHA256: `593fbffaba019d604d5d61ed0a897fb4e6a69462fb1bf2c2445169ce432789a8`.
+
+## User-observed v0.5 run (2026-11-07, screenshot at 22:26)
+
+OnePlus CPH2581 / Android 16 API 36 / Adreno 750 / Vulkan 1.3.128 /
+driver `0x802fa029`. Screenshot evidence only; no direct ADB session/raw report.
+
+| Check | Observed result |
+|---|---|
+| Vulkan strip / touch | Visible green strip; 11 presses. |
+| Owned staging / warp compute | PASS. |
+| Compact page-index GPU | **FAIL** row 2, address `0x1000000000`, hit 1, index `0xff`, expected 0. |
+| Compact CPU high addresses / page zeroing | PASS. |
+| Renderer module | Loaded; game runtime not started. |
+| Real game graphics / saves / FPS | NOT TESTED. |
+
+## Historical v0.5 build checkpoint
 
 - ARM64 renderer: 184 real sources linked with `--no-undefined`; JNI build with
   `-Wall -Wextra -Werror` passed. APK signature verified, original certificate,
