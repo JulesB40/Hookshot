@@ -32,13 +32,25 @@ static void test_compact_gpu_layout(Probe* p) {
     VkShaderModuleCreateInfo sm={.sType=VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,.codeSize=words*4,.pCode=code};
     WARP_TRY(vkCreateShaderModule(p->device,&sm,NULL,&shader));
     VkPhysicalDeviceMemoryProperties memory; vkGetPhysicalDeviceMemoryProperties(p->physical,&memory);
-    WARP_TRY(hk_buffer_create(&ops,p->device,&memory,16*4*4,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,&buffer));
-    const uint64_t addresses[16]={0,HK_GUEST_PAGES_BASE-1,HK_GUEST_PAGES_BASE,HK_GUEST_PAGES_BASE+1,
+    WARP_TRY(hk_buffer_create(&ops,p->device,&memory,64*4*4,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,&buffer));
+    uint64_t addresses[64]={0,HK_GUEST_PAGES_BASE-1,HK_GUEST_PAGES_BASE,HK_GUEST_PAGES_BASE+(1ULL<<32),
         HK_GUEST_PAGES_BASE+4096,HK_GUEST_PAGES_BASE+HK_GUEST_PAGES_BYTES-1,
         HK_GUEST_PAGES_BASE+HK_GUEST_PAGES_BYTES,HK_GUEST_PAGES_BASE2-1,HK_GUEST_PAGES_BASE2,
         HK_GUEST_PAGES_BASE2+4096,HK_GUEST_BYTES-4096,HK_GUEST_BYTES-1,HK_GUEST_BYTES,
         0x7f00000000ULL,UINT64_MAX,HK_GUEST_PAGES_BASE2+0x1234};
-    for (unsigned i=0;i<16;++i) {
+    uint32_t seed=0x12345678u;
+    for (unsigned i=16;i<64;++i) {
+        seed=seed*1664525u+1013904223u;
+        switch (i%6) {
+        case 0: addresses[i]=HK_GUEST_PAGES_BASE+seed; break;
+        case 1: addresses[i]=HK_GUEST_PAGES_BASE+(1ULL<<32)+seed; break;
+        case 2: addresses[i]=HK_GUEST_PAGES_BASE2+seed; break;
+        case 3: addresses[i]=0x7f00000000ULL+seed; break;
+        case 4: addresses[i]=((uint64_t)seed<<32)|0xaabbccddu; break;
+        default: addresses[i]=seed; break;
+        }
+    }
+    for (unsigned i=0;i<64;++i) {
         uint32_t* row=(uint32_t*)buffer.mapped+i*4;
         row[0]=(uint32_t)addresses[i]; row[1]=(uint32_t)(addresses[i]>>32); row[2]=row[3]=0xcdcdcdcd;
     }
@@ -58,7 +70,7 @@ static void test_compact_gpu_layout(Probe* p) {
     WARP_TRY(vkCreateDescriptorPool(p->device,&pc,NULL,&pool));
     VkDescriptorSetAllocateInfo sa={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,.descriptorPool=pool,.descriptorSetCount=1,.pSetLayouts=&layout};
     WARP_TRY(vkAllocateDescriptorSets(p->device,&sa,&set));
-    VkDescriptorBufferInfo info={buffer.buffer,0,16*4*4};
+    VkDescriptorBufferInfo info={buffer.buffer,0,64*4*4};
     VkWriteDescriptorSet write={.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,.dstSet=set,.dstBinding=0,
         .descriptorCount=1,.descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,.pBufferInfo=&info};
     vkUpdateDescriptorSets(p->device,1,&write,0,NULL);
@@ -78,7 +90,7 @@ static void test_compact_gpu_layout(Probe* p) {
     WARP_TRY(vkQueueSubmit(p->queue,1,&submit,p->fence)); submitted=1;
     WARP_TRY(vkWaitForFences(p->device,1,&p->fence,VK_TRUE,3000000000ULL));
     WARP_TRY(hk_buffer_invalidate(&ops,p->device,&buffer));
-    for (unsigned i=0;i<16;++i) {
+    for (unsigned i=0;i<64;++i) {
         const uint32_t* row=(const uint32_t*)buffer.mapped+i*4;
         const uint64_t expected=hk_guest_page_index(addresses[i]);
         if (row[0]!=(uint32_t)addresses[i] || row[1]!=(uint32_t)(addresses[i]>>32) ||
@@ -87,7 +99,7 @@ static void test_compact_gpu_layout(Probe* p) {
                 i,(unsigned long long)addresses[i],row[2],row[3],(unsigned long long)expected); goto cleanup;
         }
     }
-    note(p,"Compact page-index GPU test: PASS (16 boundaries; production lookup logic with runtime address inputs).\n");
+    note(p,"Compact page-index GPU test: PASS (64 boundary/mixed cases; production 32-bit-limb lookup with runtime address inputs).\n");
     note(p,"Page-index arithmetic only: GPU pointer dereference, guest pools and real game addresses remain unverified.\n");
 cleanup:
     if (submitted) vkQueueWaitIdle(p->queue);

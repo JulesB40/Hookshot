@@ -1,6 +1,39 @@
 # Validation — 2026-11-07
 
-## v0.4 build checkpoint
+## v0.5 build checkpoint
+
+- ARM64 renderer: 184 real sources linked with `--no-undefined`; JNI build with
+  `-Wall -Wextra -Werror` passed. APK signature verified, original certificate,
+  same package, version code 5, zero requested permissions.
+- Actual generated Android and desktop-layout shaders pass `spirv-val --target-env vulkan1.1`
+  and host evaluation against 3,088 independent boundary/random address cases.
+  Structural check verifies no 64-bit page-index arithmetic is emitted.
+- Existing warp shaders for maximum lane counts 32/64/128 still validate.
+- Host compact HLE allocation/memory tests and ARM64 compilation pass;
+  all 14 existing Python safety/cache regressions pass.
+- **v0.5 phone execution: pending.** This is a fix candidate for an observed GPU
+  failure, not a device-verified solution or a completed game port.
+
+APK SHA256: `19eef15753160167514fa7e43c37bd0d6c11d42571d8101893e185815d31d8af`.
+
+## User-observed v0.4 phone result (2026-11-07, screenshot at 22:18)
+
+OnePlus CPH2581, Android 16/API 36, Adreno 750, Vulkan 1.3.128,
+driver `0x802fa029`. User-supplied screenshot evidence; no direct ADB run or raw
+report retrieval was performed.
+
+| Check | Observed result |
+|---|---|
+| Vulkan strip / touch | Green strip visible, touch counter 12. |
+| Owned staging / warp compute | Both PASS. |
+| Compact page-index GPU | **FAIL** row 2, address `0x1000000000`, hit 1, index `0x1000000`, expected 0. |
+| Compact reservation | 256 GiB at `0x1632b30000`, upper GPU window `0x3f00000000`. |
+| Compact high-address CPU | PASS including VAMM edges, no aliasing and zeroing. |
+| Arena page/zeroing | PASS; host page 4096 bytes. |
+| Renderer module | Loaded; game runtime not started. |
+| Game graphics and FPS | NOT TESTED. |
+
+## Historical v0.4 build checkpoint
 
 - Android ARM64 renderer: all 184 actual source units compiled; shared link with
   `--no-undefined` passed. JNI C build with `-Wall -Wextra -Werror` passed.

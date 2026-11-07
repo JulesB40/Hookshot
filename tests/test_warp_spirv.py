@@ -67,6 +67,8 @@ def main():
     words=(ctypes.c_uint32*n)();assert layout(words,n,0)==n
     path=out/'layout.spv';path.write_bytes(bytes(words))
     if a.spirv_val: subprocess.run([str(a.spirv_val),'--target-env','vulkan1.1',str(path)],check=True)
+    from check_layout_spirv import check_layout
+    check_layout(path,a.spirv_headers/'include/spirv/unified1/spirv.core.grammar.json',a.android_layout)
     print('PASS: production guest-page lookup emitter generated layout shader; GPU execution not tested')
     print('Shaders:',out)
 if __name__=='__main__': main()

@@ -17,7 +17,7 @@ extern "C" HK_LAYOUT_EXPORT size_t hookshot_vk_layout_test_spirv(uint32_t* outpu
     try {
         Profile profile{}; profile.supported_spirv=0x00010300;
         profile.support_int64=true; profile.unified_descriptor_binding=true;
-        IR::Program program{}; program.stage=Stage::Compute; program.workgroup_size={16,1,1};
+        IR::Program program{}; program.stage=Stage::Compute; program.workgroup_size={64,1,1};
         program.info.uses_local_invocation_id=true; program.info.uses_int64=true;
         RuntimeInfo runtime{}; Shader::Backend::Bindings bindings{};
         EmitContext ctx(profile,runtime,program,bindings);
@@ -41,7 +41,7 @@ extern "C" HK_LAYOUT_EXPORT size_t hookshot_vk_layout_test_spirv(uint32_t* outpu
         ctx.OpStore(at(3),ctx.OpSelect(ctx.U32[1],lookup.inside,ctx.OpUConvert(ctx.U32[1],lookup.index),ctx.Const(0xffffffffu)));
         ctx.OpReturn(); ctx.OpFunctionEnd();
         ctx.AddEntryPoint(spv::ExecutionModel::GLCompute,fn,"main",ctx.interfaces);
-        ctx.AddExecutionMode(fn,spv::ExecutionMode::LocalSize,16u,1u,1u);
+        ctx.AddExecutionMode(fn,spv::ExecutionMode::LocalSize,64u,1u,1u);
         const auto code=ctx.Assemble();
         if (output && capacity>=code.size()) std::memcpy(output,code.data(),code.size()*4);
         return code.size();

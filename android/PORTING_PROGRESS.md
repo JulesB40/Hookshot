@@ -1,4 +1,57 @@
-# Android checkpoint v0.4 — experimental compact layout
+# Android checkpoint v0.5 — page-index fix candidate
+
+The user's v0.4 screenshot shows the compact high-address CPU test and page
+zeroing PASS, and the existing warp/staging checks still PASS. However the GPU
+page-index check **failed** at row 2: address `0x1000000000` (heap base), hit 1,
+index `0x1000000`, expected 0. The compact GPU layout was therefore not validated.
+
+Disassembly of the generated, Vulkan-valid v0.4 shader contains the expected
+64-bit base constant, subtraction, logical shift and selection. This is evidence
+of a runtime discrepancy, not proof of its precise driver/compiler root cause.
+
+The production page-table lookup now computes window membership and relative
+page indices using 32-bit high/low words. Windows are 4 GiB aligned and their
+sizes are multiples of 4 GiB; compile-time assertions enforce those preconditions.
+The low address word contributes bits 12..31; the high word contributes page
+bits above them. Only the final bounded index is widened to 64 bits for the real
+page-table address calculation. Out-of-window addresses remain misses.
+
+The same helper is used by the diagnostic compute shader. Its on-device test
+now checks 64 boundary/mixed addresses, including the heap's 4 GiB transition,
+upper-window edges, old 508 GiB addresses and malformed high pointers. It never
+uses original game data. It still does not dereference physical GPU page pointers.
+
+## Validation and reproduction
+
+The renderer links all 184 sources for Android ARM64 with no undefined symbols.
+The JNI probe compiles with warnings as errors. APK version code 5 keeps the
+same package and development certificate and requests zero permissions.
+
+In addition to `spirv-val`, the host test now strictly evaluates the generated
+straight-line lookup shader for both Android and desktop layouts on 3,088
+boundary/random addresses each and checks it
+against an independent address-range reference. It rejects reintroduction of
+64-bit page-index arithmetic. This is a small authored-shader evaluator, not a
+general SPIR-V implementation or an actual GPU test. Host HLE memory tests and
+14 Python safety/cache regressions still pass.
+
+```sh
+python tests/test_warp_spirv.py --android-layout --spirv-headers work/android-deps/SPIRV-Headers --spirv-val /absolute/path/to/spirv-val --jobs 1
+```
+
+Use the existing renderer/APK build commands below or the Termux instructions in
+README.md. Install v0.5 over v0.4 with the original signing key; do not uninstall
+or clear app data. Record **Compact page-index GPU test** and any failing row.
+The new path requires a device retest; success on Adreno is **not claimed**.
+
+The compact arena is still experimental. Real guest addresses, physical GPU
+pointer following, guest-pool synchronization and full game execution remain
+unverified. Mesh/task lowering, Horizon host services, guest HID and audio still
+block a playable port. No original game files, saves or installations are opened.
+
+---
+
+# Historical Android checkpoint v0.4 — experimental compact layout
 
 The Android host and Vulkan translator now share `shared/guest_layout.h` instead
 of independently assuming a 512 GiB window. Android uses a 256 GiB reservation;
