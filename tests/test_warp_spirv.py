@@ -64,7 +64,7 @@ def main():
     layout=dll.hookshot_vk_layout_test_spirv
     layout.argtypes=emit.argtypes;layout.restype=ctypes.c_size_t
     from check_layout_spirv import check_layout
-    for mode in range(5):
+    for mode in range(7):
         n=layout(None,0,mode);assert 5<n<100000
         words=(ctypes.c_uint32*n)();assert layout(words,n,mode)==n
         path=out/f'layout{mode}.spv';path.write_bytes(bytes(words))

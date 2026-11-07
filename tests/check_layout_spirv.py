@@ -29,6 +29,7 @@ def check_layout(path,grammar_path,android,bridge=0):
         elif op=='OpFunctionEnd':inside=False
         elif inside:body.append((op,a))
     if not bridge: assert ('int',64) not in types.values(),'Pure32 test must not declare 64-bit integers'
+    if bridge in (5,6): assert all(op!='OpBitcast' for op,_ in body),'Numeric production helper must not emit bitcasts'
     # Regression: this lookup must not reintroduce 64-bit arithmetic/select chains.
     for op,a in body:
         if bridge in (0,1) and op.startswith(('OpI','OpShift','OpBitwise','OpSelect')) and op!='OpIEqual':
@@ -60,6 +61,8 @@ def check_layout(path,grammar_path,android,bridge=0):
                 if types[typ][0]=='vector':x=(src&0xffffffff,src>>32)
                 else:x=src[0]|src[1]<<32
             elif op=='OpUConvert':x=v[0]
+            elif op=='OpSNegate':x=-v[0]
+            elif op=='OpBitwiseXor':x=v[0]^v[1]
             elif op=='OpIAdd':x=v[0]+v[1]
             elif op=='OpISub':x=v[0]-v[1]
             elif op=='OpIMul':x=v[0]*v[1]
@@ -87,6 +90,10 @@ def check_layout(path,grammar_path,android,bridge=0):
         lo=address&0xffffffff;hi=address>>32;delta=(hi-16)&0xffffffff
         hit=int(expected is not None);index=expected if expected is not None else 0xffffffff
         trace=[hit,index,index if bridge else 0xf00d0000,lo,hi,delta,(delta<<20)&0xffffffff,lo>>12,
-            0x12345678 if hit else 0xabcdef01,0xffffffff,0x12345678,0,0,0x75000007]
+            0x12345678 if hit else 0xabcdef01,0xffffffff,0x12345678,0,0,0x75000008]
+        if bridge==6:
+            mask64=(1<<64)-1
+            results=[(address+1)&mask64,(address-1)&mask64,(address<<13)&mask64,address>>17,(-address)&mask64,address^0xa55a5aa512345678]
+            trace=[word for value in results for word in (value&0xffffffff,value>>32)]+[int(address>=first),0x75000008]
         assert run(address)==trace,(hex(address),run(address),trace)
-    print(f'PASS: generated page-index shader semantics on {len(samples)} boundary/random addresses; no 64-bit page arithmetic; GPU execution not tested')
+    print(f'PASS: generated shader mode {bridge} semantics on {len(samples)} boundary/random addresses; GPU execution not tested')

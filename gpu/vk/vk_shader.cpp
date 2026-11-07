@@ -403,6 +403,9 @@ Shader::Profile make_profile() {
     p.unified_descriptor_binding = true;
     p.support_descriptor_aliasing = true;
     p.support_int8 = p.support_int16 = p.support_int64 = true;
+#if defined(__ANDROID__)
+    p.numeric_int64_conversions=dev.props.vendorID==0x5143 && dev.props.deviceID==0x43051401 && dev.props.driverVersion==0x802fa029;
+#endif
     p.support_uniform_and_storage_buffer_8bit = p.support_storage_buffer_8bit = true;
     p.support_uniform_and_storage_buffer_16bit = p.support_storage_buffer_16bit = true;
     p.support_vertex_instance_id = false;

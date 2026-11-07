@@ -1,6 +1,41 @@
 # Validation — 2026-11-07
 
-## v0.7 build checkpoint
+## v0.8 build checkpoint
+
+- Actual ARM64 renderer (184 sources), JNI C warnings-as-errors, Java/DEX and APK
+  builds pass. Signature verified; original package/certificate, version code 8,
+  zero requested permissions.
+- All seven shaders pass `spirv-val --target-env vulkan1.1` plus host evaluation
+  against 3,088 independent boundary/random inputs per mode in both layouts.
+- Modes 5/6 exercise production numeric helpers and selected real Int64 emitters;
+  the generated shaders contain no OpBitcast. This is asserted by host checks and
+  audited again by the APK on phone-generated shaders.
+- Host HLE memory tests/ARM64 compilation and 14 safety/cache regressions pass.
+- **v0.8 phone execution pending.** The exact-driver guest Int64/global-memory
+  guard remains. No game launch or physical GPU pointer dereference is claimed.
+
+APK SHA256: `e5af673137928bdb5d3515542942f9757b2ef937d16da7cf70138da6ba1706a0`.
+
+## User-supplied v0.7 result
+
+[Report excerpt](device-results/oneplus12-v07-key-results.txt), supplied by user;
+no direct ADB test. OnePlus CPH2581 / Android 16 / Adreno 750 / driver 0x802fa029.
+
+| Mode | Observed rows matching all 16 words |
+|---|---|
+| pure32 | PASS 64/64 |
+| bridge64 | FAIL 4/64 |
+| numeric64 | PASS 64/64 |
+| bitcast-pack | PASS 64/64 |
+| bitcast-unpack | FAIL 7/64 |
+
+Integer types in actual emitted code include width 64, signed 0. ShaderInt64 was
+reported and enabled. Existing staging, warp, CPU high-address and zeroing checks
+still pass. Numeric conversion tests do not establish production guest or atomic
+correctness. The failed bitcast-unpack variant returned `0xffffffff` for heap
+index 0. Precise root cause remains unproven.
+
+## Historical v0.7 build checkpoint
 
 - 184-source ARM64 renderer link with no undefined symbols, warning-clean JNI C,
   Java/DEX/APK build and signature verification pass. Same package/certificate,

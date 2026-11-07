@@ -1,0 +1,24 @@
+Provenance: selected lines from the user's pasted v0.7 report; this is an excerpt.
+Device OnePlus CPH2581, Android 16/API 36, Adreno 750.
+Vendor 0x5143; device 0x43051401; driver 0x802fa029; Vulkan 1.3.128.
+
+Shader Int64 reported/enabled: yes.
+Compact lookup pure32 GPU test: PASS (64/64 rows match all 16 words).
+Compact lookup bridge64 GPU test: FAIL (4/64 rows match all 16 words).
+Compact lookup numeric64 GPU test: PASS (64/64 rows match all 16 words).
+Compact lookup bitcast-pack GPU test: PASS (64/64 rows match all 16 words).
+Compact lookup bitcast-unpack GPU test: FAIL (7/64 rows match all 16 words).
+
+Lookup bridge64 integer type: id 21, width 64, signed 0.
+Lookup bridge64 mismatch row 1 col 5: got 0xffff expected 0xffffffff.
+Lookup bridge64 mismatch row 2 col 4: got 0xffff expected 0.
+Lookup numeric64 heap trace: in=0/0x10 hit=1 direct=0 bridge=0 round=0/0x10 delta=0 shift=0 lowpage=0 select=0x12345678 ones=0xffffffff literal=0x12345678 row=2 widehi=0 tag=0x75000007.
+Lookup bitcast-unpack mismatch row 2 col 4: got 0xffffffff expected 0.
+Lookup bitcast-unpack mismatch row 3 col 4: got 0xffffffff expected 0x100000.
+Lookup bitcast-unpack mismatch row 4 col 4: got 0xffffffff expected 0x1.
+
+Pure32 fingerprint: 0x466633be; bridge64: 0x75372ab9; numeric64: 0x275f58d8;
+bitcast-pack: 0x7bcb79d8; bitcast-unpack: 0x614c0273.
+Owned staging, authored warp partition, compact high-address CPU and arena zeroing: PASS.
+Renderer module loaded; game runtime not started. Game graphics, saves and FPS not tested.
+Original report filename: probe-6807544863383479159.txt.

@@ -31,11 +31,11 @@ void EmitBitCastF64U64(EmitContext&) {
 }
 
 Id EmitPackUint2x32(EmitContext& ctx, Id value) {
-    return ctx.OpBitcast(ctx.U64, value);
+    return ctx.PackUint64(value);
 }
 
 Id EmitUnpackUint2x32(EmitContext& ctx, Id value) {
-    return ctx.OpBitcast(ctx.U32[2], value);
+    return ctx.UnpackUint64(value);
 }
 
 Id EmitPackFloat2x16(EmitContext& ctx, Id value) {

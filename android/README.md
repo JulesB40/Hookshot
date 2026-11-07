@@ -5,9 +5,10 @@ connected during development. No game launch, correct game frame or playable
 performance has been verified.** This branch is a development checkpoint, not a
 completed Android port.
 
-The v0.6 device report confirms the 32-bit lookup passes while the Int64 bridge
-fails. v0.7 compares five conversion paths and guards guest Int64/global-memory
-shaders on the known failing driver; a production fallback is not yet verified.
+The v0.7 device report confirms numeric Int64 conversions pass while the bitcast
+unpack path fails. v0.8 applies numeric conversion helpers in the renderer and
+tests those actual emitters plus selected Int64 arithmetic. The game execution
+guard remains until device verification and further memory tests.
 See [PORTING_PROGRESS.md](PORTING_PROGRESS.md).
 
 ## What the APK does
@@ -124,7 +125,7 @@ do not uninstall an existing app as a workaround.
    **Custom Turnip loading is not implemented**; setting a driver environment
    variable in Termux does not change the driver of this APK.
 
-For v0.7, tap **Copy report** and paste the complete result, including all five
+For v0.8, tap **Copy report** and paste the complete result, including all seven
 `Compact lookup ... GPU test` summaries and `Lookup ... heap trace`. Install as an update using the original key;
 do not uninstall or clear data. The compact layout is experimental and game
 execution remains unverified.

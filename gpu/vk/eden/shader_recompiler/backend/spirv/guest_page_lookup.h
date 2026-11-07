@@ -24,7 +24,7 @@ inline GuestPageLookup EmitGuestPageLookup32(EmitContext& ctx,Id lo,Id hi) {
     return {ctx.OpLogicalOr(ctx.U1,in_a,in_b),index32};
 }
 inline GuestPageLookup EmitGuestPageLookup(EmitContext& ctx,Id addr) {
-    const Id words=ctx.OpBitcast(ctx.U32[2],addr);
+    const Id words=ctx.UnpackUint64(addr);
     const auto result=EmitGuestPageLookup32(ctx,ctx.OpCompositeExtract(ctx.U32[1],words,0U),
         ctx.OpCompositeExtract(ctx.U32[1],words,1U));
     return {result.inside,ctx.OpUConvert(ctx.U64,result.index)};

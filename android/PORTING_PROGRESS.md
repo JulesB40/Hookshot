@@ -1,4 +1,66 @@
-# Android checkpoint v0.7 — Int64 conversion isolation
+# Android checkpoint v0.8 — shared numeric conversion workaround
+
+The user-pasted v0.7 report shows **numeric64 PASS 64/64**, **bitcast-pack PASS
+64/64**, but **bitcast-unpack FAIL 7/64** and the legacy bridge FAIL 4/64. The
+emitted integer type is confirmed as 64 bits. This identifies an unsafe path
+involving scalar Int64/vector bitcasts on the tested setup, without establishing
+the precise driver/compiler root cause. [Key results](device-results/oneplus12-v07-key-results.txt).
+
+## Renderer implementation
+
+`Profile::numeric_int64_conversions` selects numeric shifts, unsigned conversions
+and OR for packing/unpacking integer words. It defaults off and is selected only
+for Android vendor `0x5143`, device `0x43051401`, driver `0x802fa029`.
+
+The shared `EmitContext::PackUint64` / `UnpackUint64` helpers now serve the real
+Eden IR pack/unpack emitters, guest page lookup, SSBO pointer construction and
+integer conversion sites in atomic fallback code. Float64 bitcasts and vector
+identity casts are unchanged. This repairs representation conversion only;
+unsupported atomic semantics are not made correct by it.
+
+The existing exact-driver Int64/global-memory guard is **retained**. The workaround
+is implemented in production code but guest execution is blocked pending actual
+verification of those helpers and subsequent pointer/memory tests. Other driver
+versions retain their prior conversion path.
+
+## New authored phone checks
+
+v0.8 keeps all five controls and adds:
+
+- **production-numeric**: calls the actual Eden pack/unpack emitters and production
+  guest lookup with the quirk flag enabled. It checks all 16 output words on each
+  of 64 boundary/mixed address rows.
+- **int64-arithmetic**: uses the actual Eden Int64 add, subtract, logical shift
+  and negate emitters plus XOR/comparison. Numeric production helpers unpack the
+  results. Cases include carry, borrow, overflow and high address bits. Six
+  low/high result pairs and comparison/tag are checked on every row.
+
+Both new shaders must contain **zero OpBitcast instructions**. Host tests assert
+this, and the APK audits the actual phone-generated code before dispatch and
+refuses a test if the numeric path is not active. No game files are used.
+
+## Validation / phone handoff
+
+All seven generated shader modes pass Vulkan validation and host semantic checks
+on 3,088 boundary/random inputs per mode for both Android and desktop layouts.
+The 184-source ARM64 renderer links without undefined symbols. JNI C builds with
+warnings as errors. The APK uses the original certificate/package, version code
+8 and zero permissions. Host HLE memory tests/ARM64 compilation and 14 Python
+safety/cache regressions pass.
+
+These are host checks. **v0.8 phone execution is pending.** Install over v0.7,
+wait for completion and tap **Copy report**. The key new lines are
+`Compact lookup production-numeric GPU test` and `Compact lookup int64-arithmetic
+GPU test`, plus their shader audits. Existing Termux build instructions apply.
+
+Physical GPU page-pointer dereference, coherent guest-pool synchronization,
+remaining Horizon services, task/mesh lowering, guest HID/audio and real game
+launch remain incomplete. Synthetic arithmetic success will not certify full
+guest programs, atomics, other shader stages, game graphics or FPS.
+
+---
+
+# Historical Android checkpoint v0.7 — Int64 conversion isolation
 
 The user-pasted v0.6 report establishes a useful split on OnePlus 12 / Adreno 750
 with driver `0x802fa029`: **pure32 lookup PASS 64/64**, but **bridge64 FAIL 4/64**.

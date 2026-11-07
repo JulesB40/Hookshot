@@ -173,6 +173,19 @@ public:
     [[nodiscard]] Id BitOffset8(const IR::Value& offset);
     [[nodiscard]] Id BitOffset16(const IR::Value& offset);
 
+    Id PackUint64(Id words) {
+        if (!profile.numeric_int64_conversions) return OpBitcast(U64,words);
+        const Id lo=OpCompositeExtract(U32[1],words,0U),hi=OpCompositeExtract(U32[1],words,1U);
+        const Id upper=OpShiftLeftLogical(U64,OpUConvert(U64,hi),Const(32U));
+        return OpBitwiseOr(U64,OpUConvert(U64,lo),upper);
+    }
+    Id UnpackUint64(Id value) {
+        if (!profile.numeric_int64_conversions) return OpBitcast(U32[2],value);
+        const Id lo=OpUConvert(U32[1],value);
+        const Id hi=OpUConvert(U32[1],OpShiftRightLogical(U64,value,Const(32U)));
+        return OpCompositeConstruct(U32[2],lo,hi);
+    }
+
     Id Const(u32 value) {
         return Constant(U32[1], value);
     }

@@ -1082,7 +1082,7 @@ void EmitContext::DefineGlobalMemoryFunctions(const Info& info) {
                                                      zero, ssbo_size_cbuf_offset)};
 
             const u64 ssbo_align_mask{~(profile.min_ssbo_alignment - 1U)};
-            const Id unaligned_addr{OpBitcast(U64, OpLoad(U32[2], ssbo_addr_pointer))};
+            const Id unaligned_addr{PackUint64(OpLoad(U32[2], ssbo_addr_pointer))};
             const Id ssbo_addr{OpBitwiseAnd(U64, unaligned_addr, Constant(U64, ssbo_align_mask))};
             const Id ssbo_size{OpUConvert(U64, OpLoad(U32[1], ssbo_size_pointer))};
             const Id ssbo_end{OpIAdd(U64, ssbo_addr, ssbo_size)};
@@ -1112,7 +1112,7 @@ void EmitContext::DefineGlobalMemoryFunctions(const Info& info) {
                 const Id size_pointer{OpAccessChain(uniform_types.U32x2, cbufs[table.cbuf_index].U32x2, zero,
                                                     Const(at / 8 + 1))};
                 const u64 ssbo_align_mask{~(profile.min_ssbo_alignment - 1U)};
-                const Id unaligned_addr{OpBitcast(U64, OpLoad(U32[2], entry_pointer))};
+                const Id unaligned_addr{PackUint64(OpLoad(U32[2], entry_pointer))};
                 const Id ssbo_addr{OpBitwiseAnd(U64, unaligned_addr, Constant(U64, ssbo_align_mask))};
                 const Id ssbo_size{OpUConvert(U64, OpCompositeExtract(U32[1], OpLoad(U32[2], size_pointer), 0U))};
                 const Id ssbo_end{OpIAdd(U64, unaligned_addr, ssbo_size)};

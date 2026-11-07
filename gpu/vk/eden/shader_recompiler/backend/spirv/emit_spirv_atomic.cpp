@@ -86,9 +86,9 @@ Id StorageAtomicU64(EmitContext& ctx, const IR::Value& binding, const IR::Value&
     LOG_WARNING(Shader_SPIRV, "Int64 atomics not supported, fallback to non-atomic");
     const Id pointer{StoragePointer(ctx, ctx.storage_types.U32x2, &StorageDefinitions::U32x2,
                                     binding, offset, sizeof(u32[2]))};
-    const Id original_value{ctx.OpBitcast(ctx.U64, ctx.OpLoad(ctx.U32[2], pointer))};
+    const Id original_value{ctx.PackUint64(ctx.OpLoad(ctx.U32[2], pointer))};
     const Id result{(ctx.*non_atomic_func)(ctx.U64, value, original_value)};
-    ctx.OpStore(pointer, ctx.OpBitcast(ctx.U32[2], result));
+    ctx.OpStore(pointer, ctx.UnpackUint64(result));
     return original_value;
 }
 
@@ -171,10 +171,10 @@ Id EmitSharedAtomicExchange64(EmitContext& ctx, Id offset, Id value) {
     const Id pointer_2{SharedPointer(ctx, offset, 1)};
     const Id value_1{ctx.OpLoad(ctx.U32[1], pointer_1)};
     const Id value_2{ctx.OpLoad(ctx.U32[1], pointer_2)};
-    const Id new_vector{ctx.OpBitcast(ctx.U32[2], value)};
+    const Id new_vector{ctx.UnpackUint64(value)};
     ctx.OpStore(pointer_1, ctx.OpCompositeExtract(ctx.U32[1], new_vector, 0U));
     ctx.OpStore(pointer_2, ctx.OpCompositeExtract(ctx.U32[1], new_vector, 1U));
-    return ctx.OpBitcast(ctx.U64, ctx.OpCompositeConstruct(ctx.U32[2], value_1, value_2));
+    return ctx.PackUint64(ctx.OpCompositeConstruct(ctx.U32[2], value_1, value_2));
 }
 
 Id EmitSharedAtomicExchange32x2(EmitContext& ctx, Id offset, Id value) {
@@ -307,7 +307,7 @@ Id EmitStorageAtomicExchange64(EmitContext& ctx, const IR::Value& binding, const
     LOG_WARNING(Shader_SPIRV, "Int64 atomics not supported, fallback to non-atomic");
     const Id pointer{StoragePointer(ctx, ctx.storage_types.U32x2, &StorageDefinitions::U32x2,
                                     binding, offset, sizeof(u32[2]))};
-    const Id original{ctx.OpBitcast(ctx.U64, ctx.OpLoad(ctx.U32[2], pointer))};
+    const Id original{ctx.PackUint64(ctx.OpLoad(ctx.U32[2], pointer))};
     ctx.OpStore(pointer, value);
     return original;
 }

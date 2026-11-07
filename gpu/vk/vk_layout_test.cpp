@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <cstring>
 #include "shader_recompiler/backend/bindings.h"
+#include "shader_recompiler/backend/spirv/emit_spirv_instructions.h"
 #include "shader_recompiler/backend/spirv/spirv_emit_context.h"
 #include "shader_recompiler/backend/spirv/guest_page_lookup.h"
 #include "shader_recompiler/frontend/ir/program.h"
@@ -11,13 +12,13 @@
 #define HK_LAYOUT_EXPORT __attribute__((visibility("default")))
 #endif
 extern "C" HK_LAYOUT_EXPORT size_t hookshot_vk_layout_test_spirv(uint32_t* output,size_t capacity,uint32_t reserved) {
-    if (reserved>4) return 0;
+    if (reserved>6) return 0;
     const bool bridge=reserved!=0;
     using namespace Shader;
     using namespace Shader::Backend::SPIRV;
     try {
         Profile profile{}; profile.supported_spirv=0x00010300;
-        profile.support_int64=bridge; profile.unified_descriptor_binding=true;
+        profile.support_int64=bridge; profile.numeric_int64_conversions=reserved>=5; profile.unified_descriptor_binding=true;
         IR::Program program{}; program.stage=Stage::Compute; program.workgroup_size={64,1,1};
         program.info.uses_local_invocation_id=true; program.info.uses_int64=bridge;
         RuntimeInfo runtime{}; Shader::Backend::Bindings bindings{};
@@ -38,6 +39,21 @@ extern "C" HK_LAYOUT_EXPORT size_t hookshot_vk_layout_test_spirv(uint32_t* outpu
         const Id low=ctx.OpLoad(ctx.U32[1],at(0)), high=ctx.OpLoad(ctx.U32[1],at(1));
         const auto direct=EmitGuestPageLookup32(ctx,low,high);
         Id round_low=low,round_high=high,bridge_index=ctx.Const(0xf00d0000u),wide_high=ctx.Const(0u);
+        if (reserved==6) {
+            const Id addr=EmitPackUint2x32(ctx,ctx.OpCompositeConstruct(ctx.U32[2],low,high));
+            const Id one=ctx.Constant(ctx.U64,u64{1});
+            const Id values[]={EmitIAdd64(ctx,addr,one),EmitISub64(ctx,addr,one),
+                EmitShiftLeftLogical64(ctx,addr,ctx.Const(13u)),EmitShiftRightLogical64(ctx,addr,ctx.Const(17u)),
+                EmitINeg64(ctx,addr),ctx.OpBitwiseXor(ctx.U64,addr,ctx.Constant(ctx.U64,u64{0xa55a5aa512345678ULL}))};
+            for (uint32_t i=0;i<6;++i) {
+                const Id pair=EmitUnpackUint2x32(ctx,values[i]);
+                ctx.OpStore(at(2+i*2),ctx.OpCompositeExtract(ctx.U32[1],pair,0u));
+                ctx.OpStore(at(3+i*2),ctx.OpCompositeExtract(ctx.U32[1],pair,1u));
+            }
+            const Id compare=ctx.OpUGreaterThanEqual(ctx.U1,addr,ctx.Constant(ctx.U64,u64{HK_GUEST_PAGES_BASE}));
+            ctx.OpStore(at(14),ctx.OpSelect(ctx.U32[1],compare,ctx.Const(1u),ctx.Const(0u)));
+            ctx.OpStore(at(15),ctx.Const(0x75000008u));
+        } else {
         if (reserved==1) {
             // Exact existing production bridge: bitcasts plus UConvert widening/narrowing.
             const Id addr=ctx.OpBitcast(ctx.U64,ctx.OpCompositeConstruct(ctx.U32[2],low,high));
@@ -47,6 +63,15 @@ extern "C" HK_LAYOUT_EXPORT size_t hookshot_vk_layout_test_spirv(uint32_t* outpu
             const auto wide=EmitGuestPageLookup(ctx,addr);
             bridge_index=ctx.OpSelect(ctx.U32[1],wide.inside,ctx.OpUConvert(ctx.U32[1],wide.index),ctx.Const(0xffffffffu));
             wide_high=ctx.OpCompositeExtract(ctx.U32[1],ctx.OpBitcast(ctx.U32[2],wide.index),1u);
+        } else if (reserved==5) {
+            const Id addr=EmitPackUint2x32(ctx,ctx.OpCompositeConstruct(ctx.U32[2],low,high));
+            const Id round=EmitUnpackUint2x32(ctx,addr);
+            round_low=ctx.OpCompositeExtract(ctx.U32[1],round,0u);
+            round_high=ctx.OpCompositeExtract(ctx.U32[1],round,1u);
+            const auto wide=EmitGuestPageLookup(ctx,addr);
+            const Id index_words=EmitUnpackUint2x32(ctx,wide.index);
+            bridge_index=ctx.OpSelect(ctx.U32[1],wide.inside,ctx.OpCompositeExtract(ctx.U32[1],index_words,0u),ctx.Const(0xffffffffu));
+            wide_high=ctx.OpCompositeExtract(ctx.U32[1],index_words,1u);
         } else if (bridge) {
             // Alternate pack/unpack paths are diagnostic candidates, not production workarounds.
             const bool numeric_pack=reserved!=3, numeric_unpack=reserved!=4;
@@ -75,8 +100,9 @@ extern "C" HK_LAYOUT_EXPORT size_t hookshot_vk_layout_test_spirv(uint32_t* outpu
             round_low,round_high,delta,ctx.OpShiftLeftLogical(ctx.U32[1],delta,ctx.Const(20u)),
             ctx.OpShiftRightLogical(ctx.U32[1],low,ctx.Const(12u)),
             ctx.OpSelect(ctx.U32[1],direct.inside,ctx.Const(0x12345678u),ctx.Const(0xabcdef01u)),
-            ctx.Const(0xffffffffu),ctx.Const(0x12345678u),index,wide_high,ctx.Const(0x75000007u)};
+            ctx.Const(0xffffffffu),ctx.Const(0x12345678u),index,wide_high,ctx.Const(0x75000008u)};
         for (uint32_t i=0;i<14;++i) ctx.OpStore(at(i+2),trace[i]);
+        }
         ctx.OpReturn(); ctx.OpFunctionEnd();
         ctx.AddEntryPoint(spv::ExecutionModel::GLCompute,fn,"main",ctx.interfaces);
         ctx.AddExecutionMode(fn,spv::ExecutionMode::LocalSize,64u,1u,1u);
