@@ -1,6 +1,6 @@
 /* GPL-3.0-or-later. Executes the renderer's actual page lookup emitters on authored data. */
 static void test_compact_gpu_layout_mode(Probe* p,int bridge) {
-    const char* names[]={"pure32","bridge64","numeric64","bitcast-pack","bitcast-unpack","production-numeric","int64-arithmetic"};
+    const char* names[]={"pure32","bridge64","numeric64","bitcast-pack","bitcast-unpack","production-numeric","int64-arithmetic","lowered-int64"};
     const char* mode=names[bridge];
     note(p,"Lookup diagnostic mode: %s.\n",mode);
     typedef size_t (*Emit)(uint32_t*,size_t,uint32_t);
@@ -16,7 +16,7 @@ static void test_compact_gpu_layout_mode(Probe* p,int bridge) {
     const HkBufferOps ops={vkCreateBuffer,vkDestroyBuffer,vkGetBufferMemoryRequirements,vkAllocateMemory,
         vkFreeMemory,vkBindBufferMemory,vkMapMemory,vkUnmapMemory,vkFlushMappedMemoryRanges,vkInvalidateMappedMemoryRanges};
     VkPhysicalDeviceFeatures features; vkGetPhysicalDeviceFeatures(p->physical,&features);
-    if (bridge && !features.shaderInt64) { note(p,"Compact page-index GPU test: shaderInt64 unavailable.\n"); return; }
+    if (bridge && bridge!=7 && !features.shaderInt64) { note(p,"Compact page-index GPU test: shaderInt64 unavailable.\n"); return; }
     uint32_t count=0; vkGetPhysicalDeviceQueueFamilyProperties(p->physical,&count,NULL);
     VkQueueFamilyProperties* families=calloc(count?count:1,sizeof *families);
     if (!families) return;
@@ -25,7 +25,7 @@ static void test_compact_gpu_layout_mode(Probe* p,int bridge) {
     free(families);
     if (!compute) { note(p,"Compact page-index GPU test: no compute queue.\n"); return; }
     module=dlopen("libhookshot_vk.so",RTLD_NOW|RTLD_LOCAL);
-    Emit emit=module?(Emit)dlsym(module,"hookshot_vk_layout_test_spirv"):NULL;
+    Emit emit=module?(Emit)dlsym(module,bridge==7?"hookshot_vk_lowered_test_spirv":"hookshot_vk_layout_test_spirv"):NULL;
     if (!emit) { note(p,"Compact page-index GPU test: renderer test emitter unavailable.\n"); goto cleanup; }
     const size_t words=emit(NULL,0,(uint32_t)bridge);
     if (words<=5 || words>100000) { note(p,"Compact page-index GPU test: emitter failed.\n"); goto cleanup; }
@@ -35,15 +35,18 @@ static void test_compact_gpu_layout_mode(Probe* p,int bridge) {
     uint32_t fingerprint=2166136261u;
     for (size_t i=0;i<words;++i) { fingerprint^=code[i]; fingerprint*=16777619u; }
     note(p,"Lookup %s shader: %zu words, fingerprint %#x.\n",mode,words,fingerprint);
-    unsigned types64=0,bitcasts=0;
+    unsigned types64=0,bitcasts=0; uint32_t int64_type=0;
     for (size_t at=5;at<words;) {
         const uint32_t n=code[at]>>16,op=code[at]&65535u;
         if (!n || n>words-at) { note(p,"Lookup %s shader audit: malformed word stream.\n",mode); goto cleanup; }
         bitcasts+=op==124u;
-        if (op==21u && n==4) { note(p,"Lookup %s integer type: id %u, width %u, signed %u.\n",mode,code[at+1],code[at+2],code[at+3]); types64+=code[at+2]==64; }
+        if (op==21u && n==4) { note(p,"Lookup %s integer type: id %u, width %u, signed %u.\n",mode,code[at+1],code[at+2],code[at+3]); types64+=code[at+2]==64; if (code[at+2]==64) int64_type=code[at+1]; }
         at+=n;
     }
-    if ((bridge && types64!=1) || (!bridge && types64)) { note(p,"Lookup %s shader audit: unexpected Int64 type count %u.\n",mode,types64); goto cleanup; }
+    if ((bridge && bridge!=7 && types64!=1) || ((!bridge || bridge==7) && types64)) { note(p,"Lookup %s shader audit: unexpected Int64 type count %u.\n",mode,types64); goto cleanup; }
+    if (int64_type) for (size_t at=5;at<words;at+=code[at]>>16)
+        if ((code[at]&65535u)==43u && (code[at]>>16)==5u && code[at+1]==int64_type)
+            note(p,"Lookup %s Int64 literal id %u: low %#x, high %#x.\n",mode,code[at+2],code[at+3],code[at+4]);
     note(p,"Lookup %s shader audit: %u bitcast opcodes.\n",mode,bitcasts);
     if (bridge>=5 && bitcasts) { note(p,"Lookup %s: numeric workaround not active; refusing test.\n",mode); goto cleanup; }
     VkShaderModuleCreateInfo sm={.sType=VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,.codeSize=words*4,.pCode=code};
@@ -114,10 +117,10 @@ static void test_compact_gpu_layout_mode(Probe* p,int bridge) {
         const uint32_t lo=(uint32_t)addresses[i],hi=(uint32_t)(addresses[i]>>32);
         const uint32_t delta=hi-(uint32_t)(HK_GUEST_PAGES_BASE>>32),hit=index!=UINT64_MAX;
         uint32_t expected[16]={lo,hi,hit,(uint32_t)index,bridge?(uint32_t)index:0xf00d0000u,
-            lo,hi,delta,delta<<20,lo>>12,hit?0x12345678u:0xabcdef01u,0xffffffffu,0x12345678u,i,0u,0x75000008u};
-        if (bridge==6) {
+            lo,hi,delta,delta<<20,lo>>12,hit?0x12345678u:0xabcdef01u,0xffffffffu,0x12345678u,i,0u,0x75000009u};
+        if (bridge>=6) {
             const uint64_t a=addresses[i];
-            const uint64_t results[6]={a+1,a-1,a<<13,a>>17,(uint64_t)0-a,a^0xa55a5aa512345678ULL};
+            const uint64_t results[6]={a+1,a-1,a<<(bridge==7?i:13),a>>(bridge==7?i:17),(uint64_t)0-a,a^0xa55a5aa512345678ULL};
             for (unsigned j=0;j<6;++j) { expected[2+j*2]=(uint32_t)results[j]; expected[3+j*2]=(uint32_t)(results[j]>>32); }
             expected[14]=a>=HK_GUEST_PAGES_BASE;
         }
@@ -127,7 +130,7 @@ static void test_compact_gpu_layout_mode(Probe* p,int bridge) {
             bad=1;
         }
         failures+=(unsigned)bad;
-        if (i==2 && bridge!=6) note(p,"Lookup %s heap trace: in=%#x/%#x hit=%u direct=%#x bridge=%#x round=%#x/%#x delta=%#x shift=%#x lowpage=%#x select=%#x ones=%#x literal=%#x row=%u widehi=%#x tag=%#x.\n",
+        if (i==2 && bridge<6) note(p,"Lookup %s heap trace: in=%#x/%#x hit=%u direct=%#x bridge=%#x round=%#x/%#x delta=%#x shift=%#x lowpage=%#x select=%#x ones=%#x literal=%#x row=%u widehi=%#x tag=%#x.\n",
             mode,row[0],row[1],row[2],row[3],row[4],row[5],row[6],row[7],row[8],row[9],row[10],row[11],row[12],row[13],row[14],row[15]);
     }
     note(p,"Compact lookup %s GPU test: %s (%u/64 rows match all 16 words).\n",mode,failures?"FAIL":"PASS",64-failures);
@@ -146,5 +149,5 @@ cleanup:
 }
 
 static void test_compact_gpu_layout(Probe* p) {
-    for (int mode=0;mode<7;++mode) test_compact_gpu_layout_mode(p,mode);
+    for (int mode=0;mode<8;++mode) test_compact_gpu_layout_mode(p,mode);
 }

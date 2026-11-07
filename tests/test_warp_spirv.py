@@ -22,7 +22,7 @@ def main():
     cxx=shutil.which('g++')
     if not cxx: raise SystemExit('Host g++ required')
     vk=ROOT/'gpu/vk'
-    sources=sorted((vk/'eden').rglob('*.cpp'))+sorted((vk/'sirit/src').rglob('*.cpp'))+[vk/'vk_warp_test.cpp',vk/'vk_layout_test.cpp']
+    sources=sorted((vk/'eden').rglob('*.cpp'))+sorted((vk/'sirit/src').rglob('*.cpp'))+[vk/'vk_warp_test.cpp',vk/'vk_layout_test.cpp',vk/'vk_lowered_int64_test.cpp']
     out=Path(tempfile.mkdtemp(prefix='warp-spirv-',dir=ROOT/'work'))
     cache=ROOT/'work/host-warp-objects';cache.mkdir(exist_ok=True)
     flags=['-std=c++23','-O0','-fPIC','-w']
@@ -64,7 +64,10 @@ def main():
     layout=dll.hookshot_vk_layout_test_spirv
     layout.argtypes=emit.argtypes;layout.restype=ctypes.c_size_t
     from check_layout_spirv import check_layout
-    for mode in range(7):
+    for mode in range(8):
+        if mode==7:
+            layout=dll.hookshot_vk_lowered_test_spirv
+            layout.argtypes=emit.argtypes;layout.restype=ctypes.c_size_t
         n=layout(None,0,mode);assert 5<n<100000
         words=(ctypes.c_uint32*n)();assert layout(words,n,mode)==n
         path=out/f'layout{mode}.spv';path.write_bytes(bytes(words))

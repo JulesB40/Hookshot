@@ -1,6 +1,41 @@
 # Validation — 2026-11-07
 
-## v0.8 build checkpoint
+## v0.9 build checkpoint
+
+- 185-source Android ARM64 renderer link with no undefined symbols; warning-clean
+  JNI C, Java/DEX/APK build and signature verification pass. Original certificate
+  and package, version code 9, zero requested permissions.
+- All eight shader modes pass `spirv-val --target-env vulkan1.1` and host semantic
+  evaluation on 3,088 inputs for both layouts.
+- Mode 7 runs the actual Eden Int64 lowering pass and full SPIR-V emitter. The
+  emitted module declares no 64-bit integer type and contains no bitcasts.
+  Host checks vary local invocation ID to cover shift amounts 0..63.
+- Actual HLE memory tests/ARM64 compilation and 14 Python regressions pass.
+- **v0.9 device execution pending.** Residual Int64/global memory and paired
+  atomic operations remain guarded; full game launch remains unavailable.
+
+APK SHA256: `f378801ee4a1813280830a9d90dcadc8b844039612962e9f226e5125b84640d8`.
+
+## User-supplied v0.8 result
+
+[Report excerpt](device-results/oneplus12-v08-key-results.txt), supplied by user;
+no direct ADB test. Same OnePlus CPH2581 / Adreno 750 / driver 0x802fa029.
+
+| Check | Observed result |
+|---|---|
+| Production numeric conversion helper | PASS 64/64 rows, zero bitcast opcodes |
+| Native Int64 arithmetic | **FAIL 0/64 rows match**, zero bitcast opcodes |
+| Add-one on zero, high word | 1, expected 0 |
+| Pure32 / numeric64 / bitcast-pack | PASS 64/64 |
+| Legacy bridge / bitcast-unpack | FAIL 4/64 and 7/64 |
+| Owned staging / warp / CPU high addresses / zeroing | PASS |
+| Game launch / graphics / saves / FPS | NOT TESTED |
+
+Conversion success is not evidence of correct native arithmetic. v0.9 avoids
+that native arithmetic route with the upstream lowering pass. No device success
+for the lowered route is claimed yet.
+
+## Historical v0.8 build checkpoint
 
 - Actual ARM64 renderer (184 sources), JNI C warnings-as-errors, Java/DEX and APK
   builds pass. Signature verified; original package/certificate, version code 8,

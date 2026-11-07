@@ -52,7 +52,7 @@ extern "C" HK_LAYOUT_EXPORT size_t hookshot_vk_layout_test_spirv(uint32_t* outpu
             }
             const Id compare=ctx.OpUGreaterThanEqual(ctx.U1,addr,ctx.Constant(ctx.U64,u64{HK_GUEST_PAGES_BASE}));
             ctx.OpStore(at(14),ctx.OpSelect(ctx.U32[1],compare,ctx.Const(1u),ctx.Const(0u)));
-            ctx.OpStore(at(15),ctx.Const(0x75000008u));
+            ctx.OpStore(at(15),ctx.Const(0x75000009u));
         } else {
         if (reserved==1) {
             // Exact existing production bridge: bitcasts plus UConvert widening/narrowing.
@@ -100,7 +100,7 @@ extern "C" HK_LAYOUT_EXPORT size_t hookshot_vk_layout_test_spirv(uint32_t* outpu
             round_low,round_high,delta,ctx.OpShiftLeftLogical(ctx.U32[1],delta,ctx.Const(20u)),
             ctx.OpShiftRightLogical(ctx.U32[1],low,ctx.Const(12u)),
             ctx.OpSelect(ctx.U32[1],direct.inside,ctx.Const(0x12345678u),ctx.Const(0xabcdef01u)),
-            ctx.Const(0xffffffffu),ctx.Const(0x12345678u),index,wide_high,ctx.Const(0x75000008u)};
+            ctx.Const(0xffffffffu),ctx.Const(0x12345678u),index,wide_high,ctx.Const(0x75000009u)};
         for (uint32_t i=0;i<14;++i) ctx.OpStore(at(i+2),trace[i]);
         }
         ctx.OpReturn(); ctx.OpFunctionEnd();

@@ -5,10 +5,10 @@ connected during development. No game launch, correct game frame or playable
 performance has been verified.** This branch is a development checkpoint, not a
 completed Android port.
 
-The v0.7 device report confirms numeric Int64 conversions pass while the bitcast
-unpack path fails. v0.8 applies numeric conversion helpers in the renderer and
-tests those actual emitters plus selected Int64 arithmetic. The game execution
-guard remains until device verification and further memory tests.
+The v0.8 report confirms production numeric conversions pass but native Int64
+arithmetic fails. v0.9 selects Eden's existing 32-bit Int64 lowering for the tested
+driver and adds a full-IR/backend check with all shift counts. Global memory and
+unsupported paired atomics remain guarded; game launch remains incomplete.
 See [PORTING_PROGRESS.md](PORTING_PROGRESS.md).
 
 ## What the APK does
@@ -125,7 +125,7 @@ do not uninstall an existing app as a workaround.
    **Custom Turnip loading is not implemented**; setting a driver environment
    variable in Termux does not change the driver of this APK.
 
-For v0.8, tap **Copy report** and paste the complete result, including all seven
+For v0.9, tap **Copy report** and paste the complete result, including all eight
 `Compact lookup ... GPU test` summaries and `Lookup ... heap trace`. Install as an update using the original key;
 do not uninstall or clear data. The compact layout is experimental and game
 execution remains unverified.

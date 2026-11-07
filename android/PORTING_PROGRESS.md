@@ -1,4 +1,71 @@
-# Android checkpoint v0.8 — shared numeric conversion workaround
+# Android checkpoint v0.9 — reuse Eden's Int64 lowering pass
+
+The user-pasted v0.8 report confirms **production-numeric conversions PASS 64/64**,
+but **native Int64 arithmetic FAIL 0/64** despite containing no bitcasts. For input
+zero, the high word of add-one is 1 instead of 0. Numeric representation alone
+therefore does not establish arithmetic correctness. [Device results](device-results/oneplus12-v08-key-results.txt).
+
+## Renderer change
+
+For the exact tested Android vendor/device/driver tuple, both translation host
+info and SPIR-V profile now report native Int64 unsupported. This selects the
+existing Eden `LowerInt64ToInt32` optimization, already part of the normal Maxwell
+translation pipeline. Desktop and other driver tuples retain their previous path.
+
+No new hand-written arithmetic substitute is inserted into the renderer. Eden's
+existing carry/borrow and word-shift lowering handles authored Int64 operations.
+The numeric conversion helper remains available for diagnostics; lowered guest
+arithmetic must not require a scalar 64-bit type.
+
+Residual Int64 and global-memory programs remain explicit failures on the tested
+driver. Paired atomic opcodes are also rejected: existing non-atomic fallbacks
+must not be mistaken for correct atomic emulation. The code does not silently
+turn unsupported global loads into zero. Mesh/import restrictions remain.
+
+## New actual-pass test
+
+`vk_lowered_int64_test.cpp` builds an authored IR compute program with Int64 add,
+subtract, negate and logical shifts, then runs the actual lowering pass, identity
+removal and dead-code elimination. The normal full `EmitSPIRV` backend emits the
+result. It uses a regular storage buffer, not physical GPU pointers or game data.
+
+The APK's **lowered-int64** case checks 64 rows, with shift counts **0..63** from
+local invocation ID. Each row checks low/high words for add/subtract/left/right
+shifts/negation/XOR, unsigned comparison and a marker. The actual emitted shader
+must declare no Int64 type and contain no bitcasts, or the APK refuses it.
+Native arithmetic and earlier variants remain comparison controls; their known
+failures do not establish whether the new lowered case passes.
+
+The APK also prints raw low/high words of native Int64 constants, where present,
+so bytecode-generation issues can be distinguished from execution discrepancies.
+The exact root cause of the native arithmetic failure is still unproven.
+
+## Validation / phone procedure
+
+All eight shader modes pass Vulkan validation and host semantic checks against
+3,088 boundary/random inputs for Android and desktop layouts. The lowered test
+covers every shift amount. The small evaluator models out-of-range intermediate
+32-bit shifts/bitfields as arbitrary zero; selected final results are checked
+against independent 64-bit references. Actual device execution remains necessary.
+
+The renderer now compiles 185 real source units for ARM64 and links without
+undefined symbols. JNI C, Java/DEX, signing and permission checks pass. The APK
+keeps the original certificate/package, version code 9 and zero permissions.
+Host HLE memory/ARM64 compilation and 14 safety/cache regressions pass.
+
+**v0.9 has not run on the phone yet.** Install as an update over v0.8, wait, tap
+**Copy report** and paste the result. The key line is `Compact lookup lowered-int64
+GPU test`. The existing Termux build steps apply; no PC or game import is needed
+for running these checks. No original game files or saves are opened.
+
+Physical GPU page-pointer access, guest-pool synchronization, the full Horizon
+runtime, task/mesh lowering, guest HID/audio and actual game launch remain
+incomplete. This authored test does not certify arbitrary guest programs,
+atomics, floating-point conversions, other shader stages or playable performance.
+
+---
+
+# Historical Android checkpoint v0.8 — shared numeric conversion workaround
 
 The user-pasted v0.7 report shows **numeric64 PASS 64/64**, **bitcast-pack PASS
 64/64**, but **bitcast-unpack FAIL 7/64** and the legacy bridge FAIL 4/64. The

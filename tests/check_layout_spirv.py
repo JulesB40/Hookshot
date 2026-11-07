@@ -28,14 +28,15 @@ def check_layout(path,grammar_path,android,bridge=0):
             inside=True
         elif op=='OpFunctionEnd':inside=False
         elif inside:body.append((op,a))
-    if not bridge: assert ('int',64) not in types.values(),'Pure32 test must not declare 64-bit integers'
-    if bridge in (5,6): assert all(op!='OpBitcast' for op,_ in body),'Numeric production helper must not emit bitcasts'
+    if bridge in (0,7): assert ('int',64) not in types.values(),'Pure32 test must not declare 64-bit integers'
+    if bridge in (5,6,7): assert all(op!='OpBitcast' for op,_ in body),'Numeric production helper must not emit bitcasts'
     # Regression: this lookup must not reintroduce 64-bit arithmetic/select chains.
     for op,a in body:
         if bridge in (0,1) and op.startswith(('OpI','OpShift','OpBitwise','OpSelect')) and op!='OpIEqual':
             assert types.get(a[0])!=('int',64),('64-bit arithmetic reintroduced',op)
-    def run(addr):
-        env=dict(constants);data=[addr&0xffffffff,addr>>32]+[0xcdcdcdcd]*14
+    def run(addr,invocation=0):
+        env=dict(constants);data=[0xcdcdcdcd]*(64*16)
+        data[invocation*16:invocation*16+2]=[addr&0xffffffff,addr>>32]
         env.update({ident:('ptr',storage,()) for ident,storage in variables.items()})
         def value(ident):return env[ident]
         def mask(typ,x):
@@ -49,7 +50,7 @@ def check_layout(path,grammar_path,android,bridge=0):
             v=[value(x) for x in args] if op not in ('OpCompositeExtract',) else []
             if op=='OpLoad':
                 ptr=v[0]
-                if ptr[1]==1:x=(0,0,0) # invocation zero; one runtime address at a time
+                if ptr[1]==1:x=(invocation,0,0)
                 else:
                     assert ptr[1]==12 and len(ptr[2])==2 and ptr[2][0]==0
                     x=data[ptr[2][1]]
@@ -63,12 +64,22 @@ def check_layout(path,grammar_path,android,bridge=0):
             elif op=='OpUConvert':x=v[0]
             elif op=='OpSNegate':x=-v[0]
             elif op=='OpBitwiseXor':x=v[0]^v[1]
+            elif op=='OpIAddCarry':x=((v[0]+v[1])&0xffffffff,(v[0]+v[1])>>32)
+            elif op=='OpNot':x=~v[0]
+            elif op=='OpIEqual':x=v[0]==v[1]
+            elif op=='OpINotEqual':x=v[0]!=v[1]
+            elif op=='OpUGreaterThan':x=v[0]>v[1]
+            elif op=='OpSGreaterThanEqual':x=((v[0]^0x80000000)-0x80000000)>=((v[1]^0x80000000)-0x80000000)
+            elif op=='OpBitFieldUExtract':x=(v[0]>>v[1])&((1<<v[2])-1) if v[1]+v[2]<=32 else 0
+            elif op=='OpBitFieldInsert':
+                field=((1<<v[3])-1)<<v[2] if v[2]+v[3]<=32 else 0
+                x=(v[0]&~field)|((v[1]<<v[2])&field) if v[2]+v[3]<=32 else 0
             elif op=='OpIAdd':x=v[0]+v[1]
             elif op=='OpISub':x=v[0]-v[1]
             elif op=='OpIMul':x=v[0]*v[1]
             elif op=='OpBitwiseOr':x=v[0]|v[1]
-            elif op=='OpShiftLeftLogical':x=v[0]<<v[1]
-            elif op=='OpShiftRightLogical':x=v[0]>>v[1]
+            elif op=='OpShiftLeftLogical':x=v[0]<<v[1] if v[1]<types[typ][1] else 0
+            elif op=='OpShiftRightLogical':x=v[0]>>v[1] if v[1]<types[typ][1] else 0
             elif op=='OpULessThan':x=v[0]<v[1]
             elif op=='OpUGreaterThanEqual':x=v[0]>=v[1]
             elif op=='OpLogicalOr':x=v[0] or v[1]
@@ -76,24 +87,25 @@ def check_layout(path,grammar_path,android,bridge=0):
             elif op=='OpSelect':x=v[1] if v[0] else v[2]
             else:raise AssertionError('Unsupported authored-shader opcode '+op)
             env[result]=mask(typ,x)
-        return data[2:]
+        return data[invocation*16+2:invocation*16+16]
     end=1<<(38 if android else 39);first=64<<30;upper=end-(4<<30)
     samples=[0,first-1,first,first+1,first+(1<<32),first+(8<<30)-1,first+(8<<30),
         upper-1,upper,upper+1,upper+4096,end-4096,end-1,end,0x7f00000000,(1<<64)-1]
     rng=random.Random(0x750)
     for _ in range(1024):
         samples.extend([first+rng.randrange(8<<30),upper+rng.randrange(4<<30),rng.randrange(1<<64)])
-    for address in samples:
+    for sample,address in enumerate(samples):
+        invocation=sample%64 if bridge==7 else 0
         if first<=address<first+(8<<30):expected=(address-first)//4096
         elif upper<=address<end:expected=(8<<30)//4096+(address-upper)//4096
         else:expected=None
         lo=address&0xffffffff;hi=address>>32;delta=(hi-16)&0xffffffff
         hit=int(expected is not None);index=expected if expected is not None else 0xffffffff
         trace=[hit,index,index if bridge else 0xf00d0000,lo,hi,delta,(delta<<20)&0xffffffff,lo>>12,
-            0x12345678 if hit else 0xabcdef01,0xffffffff,0x12345678,0,0,0x75000008]
-        if bridge==6:
+            0x12345678 if hit else 0xabcdef01,0xffffffff,0x12345678,0,0,0x75000009]
+        if bridge>=6:
             mask64=(1<<64)-1
-            results=[(address+1)&mask64,(address-1)&mask64,(address<<13)&mask64,address>>17,(-address)&mask64,address^0xa55a5aa512345678]
-            trace=[word for value in results for word in (value&0xffffffff,value>>32)]+[int(address>=first),0x75000008]
-        assert run(address)==trace,(hex(address),run(address),trace)
+            results=[(address+1)&mask64,(address-1)&mask64,(address<<(invocation if bridge==7 else 13))&mask64,address>>(invocation if bridge==7 else 17),(-address)&mask64,address^0xa55a5aa512345678]
+            trace=[word for value in results for word in (value&0xffffffff,value>>32)]+[int(address>=first),0x75000009]
+        assert run(address,invocation)==trace,(hex(address),invocation,run(address,invocation),trace)
     print(f'PASS: generated shader mode {bridge} semantics on {len(samples)} boundary/random addresses; GPU execution not tested')

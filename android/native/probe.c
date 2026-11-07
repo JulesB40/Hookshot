@@ -125,7 +125,7 @@ static void run_probe(Probe *p) {
         .queueCount = 1, .pQueuePriorities = &priority};
     const char *device_extensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
     if (properties.vendorID==0x5143 && properties.deviceID==0x43051401 && properties.driverVersion==0x802fa029)
-        note(p,"GAME BLOCKER: this driver setup failed the Int64 bridge test; guest Int64/global-memory shaders are guarded until a fallback is verified.\n");
+        note(p,"GAME BLOCKER: native Int64 arithmetic failed on this driver; 32-bit IR lowering is selected. Remaining Int64/global-memory and paired atomics stay guarded.\n");
     note(p,"Shader Int64 reported/enabled: %s.\n",features.features.shaderInt64?"yes":"no");
     VkPhysicalDeviceFeatures enabled_features={.shaderInt64=features.features.shaderInt64};
     VkDeviceCreateInfo device = {.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, .queueCreateInfoCount = 1,

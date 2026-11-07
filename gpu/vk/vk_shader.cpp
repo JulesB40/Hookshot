@@ -397,14 +397,23 @@ private:
     uint32_t local_memory = 0;
 };
 
+bool needs_int64_lowering() {
+#if defined(__ANDROID__)
+    return dev.props.vendorID==0x5143 && dev.props.deviceID==0x43051401 && dev.props.driverVersion==0x802fa029;
+#else
+    return false;
+#endif
+}
+
 Shader::Profile make_profile() {
     Shader::Profile p{};
     p.supported_spirv = 0x00010600;
     p.unified_descriptor_binding = true;
     p.support_descriptor_aliasing = true;
-    p.support_int8 = p.support_int16 = p.support_int64 = true;
+    p.support_int8 = p.support_int16 = true;
+    p.support_int64 = !needs_int64_lowering();
 #if defined(__ANDROID__)
-    p.numeric_int64_conversions=dev.props.vendorID==0x5143 && dev.props.deviceID==0x43051401 && dev.props.driverVersion==0x802fa029;
+    p.numeric_int64_conversions=needs_int64_lowering();
 #endif
     p.support_uniform_and_storage_buffer_8bit = p.support_storage_buffer_8bit = true;
     p.support_uniform_and_storage_buffer_16bit = p.support_storage_buffer_16bit = true;
@@ -440,7 +449,7 @@ Shader::HostTranslateInfo host_info() {
     // (RX_VK_NO_F16, a test: the game's f16 math lowered to f32, as a card without f16 shaders would need (GTX 10xx, issue 98). Eden's
     // lowering made a picture of noise of Kokiri on an RTX card, so it is not used by itself)
     h.support_float16 = !getenv("RX_VK_NO_F16");
-    h.support_int64 = true;
+    h.support_int64 = !needs_int64_lowering();
     h.needs_demote_reorder = false;
     h.support_snorm_render_buffer = true;
     h.support_viewport_index_layer = true;
@@ -610,10 +619,16 @@ std::unordered_map<uint64_t, std::vector<Code>> codes;                          
 const Shader::Profile& profile(const Shader::IR::Program& program) {
     static const Shader::Profile p = make_profile();
     const auto& info=program.info;
+    if (needs_int64_lowering())
+        for (const auto* block:program.blocks) for (const auto& inst:block->Instructions()) {
+            const auto name=Shader::IR::NameOf(inst.GetOpcode());
+            if (name.find("Atomic")!=std::string_view::npos && name.ends_with("32x2"))
+                throw std::runtime_error("Paired atomic operation requires a verified atomic fallback on this driver");
+        }
 #if defined(__ANDROID__)
     if (dev.props.vendorID==0x5143 && dev.props.deviceID==0x43051401 &&
         dev.props.driverVersion==0x802fa029 && (info.uses_int64 || info.uses_global_memory))
-        throw std::runtime_error("Adreno driver failed validated Int64 bridge tests; guest Int64/global memory requires a verified fallback");
+        throw std::runtime_error("Adreno driver failed validated Int64 bridge tests; remaining guest Int64/global memory requires a verified fallback");
 #endif
     if ((info.uses_subgroup_vote || info.uses_subgroup_invocation_id || info.uses_subgroup_shuffles ||
          info.uses_subgroup_mask || info.uses_quad_shuffles || info.uses_cooperative_matrix) &&
