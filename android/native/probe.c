@@ -18,7 +18,7 @@ typedef struct Probe {
     VkSemaphore acquired, ready;
     VkFence fence;
     ANativeWindow *window;
-    char report[8192];
+    char report[16384];
     size_t used;
 } Probe;
 
@@ -39,11 +39,16 @@ static int extension(const VkExtensionProperties *all, uint32_t count, const cha
 #define TRY(call) do { VkResult result = (call); if (result != VK_SUCCESS) { \
     note(p, "%s failed: VkResult %d\n", #call, result); return; } } while (0)
 
+#include "bringup_checks.h"
+
 static void run_probe(Probe *p) {
     const char *instance_extensions[] = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_ANDROID_SURFACE_EXTENSION_NAME};
     /* 1.1 is sufficient for the diagnostic; the game renderer still requires 1.3. */
+    uint32_t loader_version=VK_API_VERSION_1_0;
+    PFN_vkEnumerateInstanceVersion version=(PFN_vkEnumerateInstanceVersion)vkGetInstanceProcAddr(VK_NULL_HANDLE,"vkEnumerateInstanceVersion");
+    if (version) version(&loader_version);
     VkApplicationInfo app = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .pApplicationName = "Hookshot Android probe",
-        .apiVersion = VK_API_VERSION_1_1};
+        .apiVersion = loader_version>=VK_API_VERSION_1_3?VK_API_VERSION_1_3:VK_API_VERSION_1_1};
     VkInstanceCreateInfo instance = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = &app,
         .enabledExtensionCount = 2, .ppEnabledExtensionNames = instance_extensions};
     TRY(vkCreateInstance(&instance, NULL, &p->instance));
@@ -71,22 +76,32 @@ static void run_probe(Probe *p) {
     int mesh_available = extension(extensions, count, VK_EXT_MESH_SHADER_EXTENSION_NAME);
     int import_available = extension(extensions, count, VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME);
     int swap_available = extension(extensions, count, VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+    int control_available=properties.apiVersion>=VK_API_VERSION_1_3 || extension(extensions,count,VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME);
     free(extensions);
     VkPhysicalDeviceMeshShaderFeaturesEXT mesh = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT};
+    VkPhysicalDeviceSubgroupSizeControlFeatures control={.sType=VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_FEATURES,
+        .pNext=mesh_available?&mesh:NULL};
     VkPhysicalDeviceFeatures2 features = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-        .pNext = mesh_available ? &mesh : NULL};
+        .pNext = control_available?(void*)&control:mesh_available?(void*)&mesh:NULL};
     vkGetPhysicalDeviceFeatures2(p->physical, &features);
-    VkPhysicalDeviceSubgroupProperties subgroup = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES};
+    VkPhysicalDeviceSubgroupSizeControlProperties limits={.sType=VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES};
+    VkPhysicalDeviceSubgroupProperties subgroup = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES, .pNext=control_available?&limits:NULL};
     VkPhysicalDeviceProperties2 properties2 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = &subgroup};
     vkGetPhysicalDeviceProperties2(p->physical, &properties2);
     note(p, "Task/mesh features: %s / %s\nHost memory import extension: %s\nASTC LDR: %s; BC: %s\nSubgroup lanes: %u\n",
         mesh.taskShader ? "yes" : "no", mesh.meshShader ? "yes" : "no", import_available ? "yes" : "no",
         features.features.textureCompressionASTC_LDR ? "yes" : "no", features.features.textureCompressionBC ? "yes" : "no",
         subgroup.subgroupSize);
+    note(p,"Subgroup control: %s; range %u-%u; required-size stages 0x%x; full compute %s\n",
+        control.subgroupSizeControl?"yes":"no",limits.minSubgroupSize,limits.maxSubgroupSize,
+        limits.requiredSubgroupSizeStages,control.computeFullSubgroups?"yes":"no");
+    VkShaderStageFlags stages32=control.subgroupSizeControl && limits.minSubgroupSize<=32 && limits.maxSubgroupSize>=32?limits.requiredSubgroupSizeStages:0;
+    note(p,"Can request 32 lanes: compute %s, vertex %s, fragment %s (query only, not shader execution).\n",
+        stages32&VK_SHADER_STAGE_COMPUTE_BIT?"yes":"no",stages32&VK_SHADER_STAGE_VERTEX_BIT?"yes":"no",stages32&VK_SHADER_STAGE_FRAGMENT_BIT?"yes":"no");
     if (!mesh.taskShader || !mesh.meshShader)
         note(p, "GAME BLOCKER: task/mesh to compute+indirect lowering is not implemented. Draws must not be silently dropped.\n");
     if (!import_available) note(p, "GAME BLOCKER: coherent guest buffer upload/write-back fallback needs validation.\n");
-    if (subgroup.subgroupSize != 32) note(p, "GAME BLOCKER: guest 32-lane operations need subgroup pinning or emulation.\n");
+    if (subgroup.subgroupSize != 32) note(p, stages32?"Only stages marked above can request 32 lanes; remaining guest subgroup operations need emulation.\n":"GAME BLOCKER: no stage can request 32 lanes; guest subgroup operations need emulation.\n");
     if (properties.apiVersion < VK_API_VERSION_1_3) note(p, "GAME BLOCKER: upstream renderer needs Vulkan 1.3.\n");
     if (!swap_available) { note(p, "Swapchains unsupported.\n"); return; }
     vkGetPhysicalDeviceQueueFamilyProperties(p->physical, &count, NULL);
@@ -195,6 +210,7 @@ static void run_probe(Probe *p) {
     if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR)
         note(p, "Vulkan clear submitted and presentation accepted (%ux%u). Visually verify a green strip.\n", extent.width, extent.height);
     else note(p, "Presentation failed: %d\n", result);
+    test_owned_buffers(p);
 }
 
 JNIEXPORT jstring JNICALL Java_dev_julesb40_hookshot_MainActivity_nativeProbe(JNIEnv *env, jobject self, jobject surface) {
@@ -203,6 +219,8 @@ JNIEXPORT jstring JNICALL Java_dev_julesb40_hookshot_MainActivity_nativeProbe(JN
     p.window = ANativeWindow_fromSurface(env, surface);
     if (!p.window) return (*env)->NewStringUTF(env, "No Android surface.\n");
     run_probe(&p);
+    test_renderer_module(&p);
+    test_guest_arena(&p);
     if (p.device) {
         vkDeviceWaitIdle(p.device);
         if (p.fence) vkDestroyFence(p.device, p.fence, NULL);

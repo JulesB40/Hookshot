@@ -5,6 +5,9 @@ connected during development. No game launch, correct game frame or playable
 performance has been verified.** This branch is a development checkpoint, not a
 completed Android port.
 
+The v0.2 checkpoint builds the actual ARM64 renderer, adds POSIX guest-memory
+reservation and expands the hardware checks. See [PORTING_PROGRESS.md](PORTING_PROGRESS.md).
+
 ## What the APK does
 
 `Hookshot Android Bring-up` is a small, game-free Java/JNI APK. It creates a real
@@ -24,8 +27,7 @@ included. Android installs it separately from existing games/emulators.
 
 - `gpu/vk/vk_main.cpp`: Android `libvulkan.so` loading and `ANativeWindow` surface
   creation, Android progress logging, portable delay, supported composite alpha
-  selection. This translation unit cross-compiles for Android ARM64; **the entire
-  renderer has not been linked**.
+  selection. This translation unit cross-compiles for Android ARM64; the full renderer now links in the v0.2 checkpoint.
 - `gpu/vk/vk_loader.h`, `vk_platform.h`, `vk_api.h`: platform-specific surface
   function and portable shared-library export.
 - `gpu/vk/vk_internal.h`: Android monotonic profiling clock.

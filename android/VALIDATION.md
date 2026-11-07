@@ -1,5 +1,21 @@
 # Validation — 2026-11-07
 
+## v0.2 checkpoint
+
+All 182 actual renderer/translator sources compiled and linked for Android ARM64
+with no unresolved symbols. The APK contains the actual renderer, version code 2,
+zero requested permissions, and is signed with the original development key.
+
+14 Python regressions and host POSIX memory-copy/guest-arena tests pass. New v0.2
+GPU copy/readback, module loading, subgroup pinning query and guest-address-space
+checks remain unverified on the phone. Game launch/graphics/FPS remain incomplete.
+
+APK SHA256: `40611ba86e03b9107ca1b7716b289269ce3b8d368d1b69cd6fde0e478b2e0829`.
+
+See [PORTING_PROGRESS.md](PORTING_PROGRESS.md).
+
+## Historical v0.1 checks
+
 Status: **partial Android bring-up, not a playable game port**.
 
 Environment: Debian Linux x86_64, Android NDK r27d (Clang 18), Android SDK build

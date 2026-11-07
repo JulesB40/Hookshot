@@ -32,8 +32,15 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
         super.onCreate(saved);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
+        root.setOnApplyWindowInsetsListener(new android.view.View.OnApplyWindowInsetsListener() {
+            @Override public android.view.WindowInsets onApplyWindowInsets(android.view.View view, android.view.WindowInsets insets) {
+                view.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),
+                    insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
+                return insets;
+            }
+        });
         TextView title = new TextView(this);
-        title.setText("Hookshot • Android ARM64 bring-up\nGame runtime not ported — this APK tests graphics and input only.");
+        title.setText("Hookshot • Android ARM64 v0.2\nGame runtime not ported — this APK tests graphics and input only.");
         title.setTextSize(18);
         root.addView(title);
         input = new TextView(this);

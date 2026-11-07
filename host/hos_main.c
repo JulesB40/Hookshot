@@ -18,6 +18,9 @@
 #include <mmsystem.h>
 #else
 #include <sys/mman.h>
+#if defined(__ANDROID__)
+#include "android/guest_arena.h"
+#endif
 #endif
 
 #ifdef A64_MEM_ZERO
@@ -112,6 +115,11 @@ static int reserve_guest(void) {
     void hos_commit_init(void);
     hos_commit_init();
     return VirtualAlloc((void *)A64_HOST_BASE, GUEST_SPACE, MEM_RESERVE | watch, PAGE_NOACCESS) == (void *)A64_HOST_BASE;
+#elif defined(__ANDROID__)
+    static HosGuestArena arena;
+    if (!hos_guest_reserve(&arena, (uintptr_t)A64_HOST_BASE, GUEST_SPACE)) return 0;
+    if (!hos_guest_commit(&arena, 0, GUEST_SPACE)) { hos_guest_release(&arena); return 0; }
+    return 1;
 #else
     return mmap((void *)A64_HOST_BASE, GUEST_SPACE, PROT_READ | PROT_WRITE,
                 MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE | MAP_NORESERVE, -1, 0) == (void *)A64_HOST_BASE;

@@ -36,6 +36,7 @@ def main():
     parser.add_argument("--build-tools", type=Path, help="SDK build-tools directory; omit on Termux")
     parser.add_argument("--ndk", type=Path, help="Official NDK for Linux x86_64 builds; omit on Termux ARM64")
     parser.add_argument("--ecj", type=Path, help="Optional Eclipse Java compiler jar when javac is unavailable")
+    parser.add_argument("--renderer", type=Path, help="Include the actual ARM64 renderer library")
     args = parser.parse_args()
     android_jar = args.android_jar.resolve(strict=True)
     tools = args.build_tools
@@ -50,14 +51,14 @@ def main():
         ndk_bin = args.ndk.resolve() / "toolchains/llvm/prebuilt/linux-x86_64/bin"
         compiler = tool("aarch64-linux-android28-clang", ndk_bin)
         readelf = tool("llvm-readelf", ndk_bin)
-        native_flags = ["-landroid", "-lvulkan"]
+        native_flags = ["-landroid", "-lvulkan", "-ldl"]
     else:
         if platform.machine() not in ("aarch64", "arm64") or not os.environ.get("PREFIX", "").startswith("/data/"):
             raise SystemExit("Native builds require ARM64 Termux. Else pass --ndk for cross-compilation.")
         compiler, readelf = tool("clang"), tool("llvm-readelf")
         # Avoid Termux's libandroid wrapper: it depends on Termux's private namespace
         # library and cannot be loaded in another APK. Link the actual OS libraries.
-        native_flags = ["/system/lib64/libandroid.so", "/system/lib64/libvulkan.so"]
+        native_flags = ["/system/lib64/libandroid.so", "/system/lib64/libvulkan.so", "/system/lib64/libdl.so"]
     work = ROOT / "work"
     if work.is_symlink():
         raise SystemExit("Refusing a symlink for the build workspace.")
@@ -67,7 +68,7 @@ def main():
     lib.parent.mkdir(parents=True)
     run([compiler, "-std=c11", "-O2", "-fPIC", "-shared", "-Wall", "-Wextra", "-Werror",
          "-Wl,-z,max-page-size=16384", "-Wl,--no-undefined", "-Wl,-soname,libhookshot_probe.so",
-         ROOT / "android/native/probe.c", "-o", lib, *native_flags])
+         ROOT / "android/native/probe.c", ROOT / "host/android/guest_arena.c", "-o", lib, *native_flags])
     dynamic = run([readelf, "-d", lib], capture_output=True, text=True).stdout
     needed = re.findall(r"Shared library: \[(.*?)\]", dynamic)
     if not needed or set(needed) - {"libandroid.so", "libvulkan.so", "libc.so", "libm.so", "libdl.so"}:
@@ -77,6 +78,15 @@ def main():
     header = run([readelf, "-h", lib], capture_output=True, text=True).stdout
     if "AArch64" not in header:
         raise SystemExit("Native library is not ARM64.")
+    renderer = None
+    if args.renderer:
+        renderer = args.renderer.resolve(strict=True)
+        dyn = run([readelf, "-d", renderer], capture_output=True, text=True).stdout
+        deps = re.findall(r"Shared library: \[(.*?)\]", dyn)
+        if set(deps) - {"libandroid.so", "libdl.so", "libc.so", "libm.so", "libvulkan.so", "liblog.so"} or "com.termux" in dyn:
+            raise SystemExit("Renderer has unsupported dependencies: " + str(deps))
+        if "AArch64" not in run([readelf, "-h", renderer], capture_output=True, text=True).stdout:
+            raise SystemExit("Renderer is not ARM64")
     unsigned = out / "unsigned.apk"
     run([aapt, "link", "-o", unsigned, "--manifest", ROOT / "android/AndroidManifest.xml", "-I", android_jar])
     classes = out / "classes"
@@ -91,6 +101,7 @@ def main():
     run([dex, "--min-api", "28", "--lib", android_jar, "--output", dex_out, *sorted(classes.rglob("*.class"))])
     with zipfile.ZipFile(unsigned, "a", zipfile.ZIP_DEFLATED) as apk:
         apk.write(lib, "lib/arm64-v8a/libhookshot_probe.so")
+        if renderer: apk.write(renderer, "lib/arm64-v8a/libhookshot_vk.so")
         apk.write(dex_out / "classes.dex", "classes.dex")
     aligned = out / "aligned.apk"
     run([align, "-p", "4", unsigned, aligned])
