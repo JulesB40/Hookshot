@@ -38,8 +38,31 @@ python tests/test_warp_spirv.py --spirv-headers work/android-deps/SPIRV-Headers 
 
 On the phone, install v0.3 over the existing diagnostic using the same signing key,
 open it, and record the `32-lane partition GPU test` and `Guest arena` lines. No
-uninstall, app-data clearing, game import or storage permission is needed. v0.3
-GPU and relocated-address results are **not yet verified on the device**.
+uninstall, app-data clearing, game import or storage permission is needed.
+
+The user supplied the v0.3 screenshot: the authored 128-invocation compute warp
+test **passed on Adreno 750**, as did owned staging and page/zeroing. Full 512 GiB
+reservation still failed; a 256 GiB diagnostic reservation succeeded. See
+[VALIDATION.md](VALIDATION.md) for exact observed values and limits.
+
+## Address-layout audit after the v0.3 device run
+
+Merely halving the reservation would leave invalid guest accesses:
+
+- `host/hos.h` fixes `HOS_SPACE_END` and `HOS_GUEST_SPACE` at 512 GiB.
+  `hos_region_alloc` hands regions out from this upper bound; `hos_svc.c` reports
+  the same range. A smaller host mapping alone does not change guest addresses.
+- `gpu/vk/vk_memory.cpp::guest_pages_set` and Eden's
+  `spirv_emit_context.cpp::DefineGlobalMemoryFunctions` both hardcode the second
+  pointer-following window at `0x7f00000000` (508 GiB), outside 256 GiB.
+- The heap starts at `0x1000000000` (64 GiB). A compact layout must keep heap,
+  address-region allocation, SVC-reported bounds, CPU translation and GPU table
+  lookup consistent. Fixed guest addresses in actual game shaders/code still
+  need validation. Do not simply mask address bits or wrap them into the arena.
+
+Next memory work requires a shared CPU/GPU layout and tests for high guest
+addresses, allocation collisions and shader pointer-following. Until then the
+smaller reservation remains diagnostic and the runtime refuses unsupported setup.
 
 Remaining game blockers include task/mesh-to-compute/indirect lowering, guest-pool
 synchronization without external import, full guest address layout compatibility,

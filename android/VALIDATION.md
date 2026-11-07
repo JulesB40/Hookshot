@@ -11,7 +11,29 @@ no host import, subgroup 64, supported range 64–128 and no stage able to reque
 v0.3 compiles and links 183 actual renderer sources for Android ARM64 with no
 unresolved symbols. The APK has version code 3, the same development certificate,
 zero requested permissions and system-only native dependencies. Signature and
-alignment verification pass. This build has NOT run on the phone yet.
+alignment verification pass.
+
+### User-observed v0.3 phone run (2026-11-07, screenshot at 22:01)
+
+The user supplied a screenshot from OnePlus CPH2581, Android 16/API 36,
+Adreno 750, driver `0x802fa029`, Vulkan 1.3.128:
+
+| Check | Observed result |
+|---|---|
+| Visible presentation / touch | Green strip visible; touch counter 11. |
+| Owned staging | PASS, 4096 bytes, coherent memory. |
+| Real Eden 32-lane partition compute test | PASS, 128 invocations: lane ID, ballots, votes, masks and shuffles. |
+| Renderer module | Loaded; `mkwvk_init` export found. Game runtime not started. |
+| Full guest window | 512 GiB unavailable even with relocation, errno 12. |
+| Smaller diagnostic mapping | 256 GiB reserved at `0x1632b30000`; page/zeroing PASS, host page 4096 bytes. |
+| Subgroup capabilities | Default 64, range 64–128; stages `0x30`, operations `0xbf`; no stage can request 32 lanes. |
+| Game launch, graphics, saves, FPS | NOT TESTED. |
+
+This is user-observed screenshot evidence, not a direct ADB test. The raw private
+report has not been retrieved. The compute PASS validates the authored cases;
+it does not establish general shader, divergent execution, HMMA or other-stage
+correctness. The diagnostic mapping is not wired into the game. Virtual address
+reservation does not mean 256 GiB of physical memory was allocated.
 
 Host validation passed: 14 existing Python regressions, collision-safe relocated
 arena/bounds/zeroing tests, stage-mask conversion, synthetic lifted arithmetic,
