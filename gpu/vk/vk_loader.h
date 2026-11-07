@@ -2,11 +2,13 @@
 // instance and device level. VK_NO_PROTOTYPES is set for the whole DLL (nx2/build.py).
 #pragma once
 
-#define VK_USE_PLATFORM_WIN32_KHR
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
-#include <vulkan/vulkan.h>
+#include "vk_platform.h"
+
+#if defined(__ANDROID__)
+#define VKX_SURFACE(X) X(vkCreateAndroidSurfaceKHR)
+#else
+#define VKX_SURFACE(X) X(vkCreateWin32SurfaceKHR)
+#endif
 
 #define VKX_GLOBAL(X)                                                                                                 \
     X(vkCreateInstance)                                                                                               \
@@ -27,7 +29,7 @@
     X(vkEnumerateDeviceExtensionProperties)                                                                           \
     X(vkCreateDevice)                                                                                                 \
     X(vkGetDeviceProcAddr)                                                                                            \
-    X(vkCreateWin32SurfaceKHR)                                                                                        \
+    VKX_SURFACE(X)                                                                                                   \
     X(vkDestroySurfaceKHR)                                                                                            \
     X(vkGetPhysicalDeviceSurfaceSupportKHR)                                                                           \
     X(vkGetPhysicalDeviceSurfaceCapabilitiesKHR)                                                                      \

@@ -22,6 +22,11 @@
   <a href="#license">License</a>
 </p>
 
+> **Android fork:** work on Android ARM64 is on `android-arm64`. See
+> [Android status and phone-only instructions](android/README.md). The first APK is
+> a hardware diagnostic, **not a playable game port**. No Snapdragon device run
+> has been verified. The Windows instructions below describe upstream behavior.
+
 Hookshot is a static recompilation. The game's code is translated to C and compiled into a Windows program, the
 console's system software is reimplemented, and the Switch 2 graphics are rebuilt on Vulkan. All of this happens
 **on your PC, from your own copy of the game**.

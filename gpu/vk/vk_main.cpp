@@ -9,6 +9,11 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include <chrono>
+#include <thread>
+#if defined(__ANDROID__)
+#include <dlfcn.h>
+#endif
 
 #include "vk_api.h"
 #include "vk_internal.h"
@@ -25,9 +30,16 @@ VKX_DEVICE3(VKX_DEFINE)
 static PFN_vkGetInstanceProcAddr get_instance_proc;
 
 bool load_global() {
+#if defined(__ANDROID__)
+    // Keep the loader alive for the lifetime of its function pointers.
+    static void* m = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
+    if (!m) return false;
+    get_instance_proc = (PFN_vkGetInstanceProcAddr)dlsym(m, "vkGetInstanceProcAddr");
+#else
     HMODULE m = LoadLibraryA("vulkan-1.dll");
     if (!m) return false;
     get_instance_proc = (PFN_vkGetInstanceProcAddr)(void*)GetProcAddress(m, "vkGetInstanceProcAddr");
+#endif
     if (!get_instance_proc) return false;
 #define VKX_LOAD(f) f = (PFN_##f)get_instance_proc(nullptr, #f);
     VKX_GLOBAL(VKX_LOAD)
@@ -84,7 +96,11 @@ bool create_instance() {
         logf("vk: the Vulkan loader is %u.%u: 1.3 is needed", VK_VERSION_MAJOR(version), VK_VERSION_MINOR(version));
         return false;
     }
+#if defined(__ANDROID__)
+    const char* exts[] = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_ANDROID_SURFACE_EXTENSION_NAME};
+#else
     const char* exts[] = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
+#endif
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
     app.pApplicationName = "mkw-recomp";
     app.apiVersion = VK_API_VERSION_1_3;
@@ -262,6 +278,14 @@ bool create_device() {
     }
     mesh.multiviewMeshShader = mesh.primitiveFragmentShadingRateMeshShader = VK_FALSE;   // (not used)
     dev.mesh_shader = dev.mesh_shader && mesh.meshShader && mesh.taskShader;
+#if defined(__ANDROID__)
+    // There is no semantics-preserving task/mesh or host-import fallback yet.
+    // Refuse the game renderer rather than silently omit geometry or GPU writes.
+    if (!dev.mesh_shader || !dev.external_memory_host) {
+        logf("vk: Android game rendering blocked: task/mesh and external host memory are required; fallbacks are not implemented");
+        return false;
+    }
+#endif
     if (robust) logf("vk: robust buffer access %s", robust_ok ? "on" : "not supported");
     f.features.robustBufferAccess = robust_ok ? VK_TRUE : VK_FALSE;   // (off by default: the game's accesses stay in their buffers)
     dev.features = f.features;
@@ -327,7 +351,7 @@ bool create_swapchain(uint32_t width, uint32_t height) {
     ci.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                 VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;   // (copied from, for RX_VK_DUMP)
     ci.preTransform = caps.currentTransform;
-    ci.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    ci.compositeAlpha = (VkCompositeAlphaFlagBitsKHR)(caps.supportedCompositeAlpha & (~caps.supportedCompositeAlpha + 1u));
     ci.presentMode = mode;
     ci.clipped = VK_TRUE;
     ci.oldSwapchain = dev.swapchain;
@@ -350,12 +374,21 @@ bool create_swapchain(uint32_t width, uint32_t height) {
 
 namespace {
 
+#if defined(__ANDROID__)
+ANativeWindow* main_window = nullptr;
+#else
 HWND main_window = nullptr;
+#endif
 bool started_up() {
-    if (const char* e = getenv("RX_VK_START_DELAY")) Sleep((DWORD)atoi(e) * 1000);   // (diagnosis: a long start, as the first one is)
+    if (const char* e = getenv("RX_VK_START_DELAY")) std::this_thread::sleep_for(std::chrono::seconds(std::max(atoi(e), 0)));   // (diagnosis: a long start, as the first one is)
     if (!replay_start()) return false;
     if (precompile_wanted()) {   // (a release build, before the game: nothing to build during play)
         // (a console while it lasts: there is no window yet, and a long wait with nothing on screen looks like a hang)
+#if defined(__ANDROID__)
+        const auto progress = [](size_t done, size_t total) {
+            if (total) logf("Preparing shaders: %zu of %zu", done, total);
+        };
+#else
         static HANDLE console = nullptr;
         const auto progress = [](size_t done, size_t total) {
             static bool tried = false;
@@ -374,14 +407,22 @@ bool started_up() {
             DWORD wrote = 0;
             WriteFile(console, line, (DWORD)n, &wrote, nullptr);
         };
+#endif
         prepare_run(progress);
         precompile_run(progress);
+#if !defined(__ANDROID__)
         if (console) CloseHandle(console), console = nullptr, FreeConsole();
+#endif
     }
     return true;
 }
 int start(void* hwnd) {
+#if defined(__ANDROID__)
+    // Caller retains an ANativeWindow reference until the replay thread stops.
+    main_window = (ANativeWindow*)hwnd;
+#else
     main_window = (HWND)hwnd;
+#endif
     if (!hwnd) {   // (HOS_HEADLESS: no window; the frames are rendered all the same, RX_VK_SHOTS writes them out)
         dev.offscreen = true;
         dev.swap_extent = {1920, 1080};
@@ -389,16 +430,26 @@ int start(void* hwnd) {
         logf("vk: no window: presents render offscreen (%ux%u)", dev.swap_extent.width, dev.swap_extent.height);
         return started_up() ? 1 : 0;
     }
+#if defined(__ANDROID__)
+    VkAndroidSurfaceCreateInfoKHR si{VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR};
+    si.window = main_window;
+    if (vkCreateAndroidSurfaceKHR(dev.instance, &si, nullptr, &dev.surface) != VK_SUCCESS) return 0;
+#else
     VkWin32SurfaceCreateInfoKHR si{VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR};
     si.hinstance = GetModuleHandleA(nullptr);
     si.hwnd = (HWND)hwnd;
     if (vkCreateWin32SurfaceKHR(dev.instance, &si, nullptr, &dev.surface) != VK_SUCCESS) return 0;
+#endif
     VkBool32 ok = VK_FALSE;
     vkGetPhysicalDeviceSurfaceSupportKHR(dev.physical, dev.queue_family, dev.surface, &ok);
     if (!ok) return 0;
+#if defined(__ANDROID__)
+    if (!create_swapchain((uint32_t)ANativeWindow_getWidth(main_window), (uint32_t)ANativeWindow_getHeight(main_window))) return 0;
+#else
     RECT r{};
     GetClientRect((HWND)hwnd, &r);
     if (!create_swapchain((uint32_t)(r.right - r.left), (uint32_t)(r.bottom - r.top))) return 0;
+#endif
     return started_up() ? 1 : 0;
 }
 
@@ -420,12 +471,12 @@ MkwVkRenderer table;
 } // namespace
 } // namespace mkwvk
 
-extern "C" __declspec(dllexport) const MkwVkRenderer* mkwvk_init(const MkwVkHost* h) {
+extern "C" MKWVK_EXPORT const MkwVkRenderer* mkwvk_init(const MkwVkHost* h) {
     using namespace mkwvk;
     if (!h || h->version != MKWVK_API_VERSION) return nullptr;
     host = h;
     if (!load_global()) {
-        logf("vk: vulkan-1.dll not found");
+        logf("vk: platform Vulkan loader not found");
         return nullptr;
     }
     if (!create_instance() || !pick_device() || !create_device()) return nullptr;
@@ -442,5 +493,9 @@ extern "C" __declspec(dllexport) const MkwVkRenderer* mkwvk_init(const MkwVkHost
 }
 
 namespace mkwvk {
+#if defined(__ANDROID__)
+ANativeWindow* app_window() { return main_window; }
+#else
 HWND app_window() { return main_window; }   // (hookshot: the Insert menu's Fullscreen row)
+#endif
 } // namespace mkwvk

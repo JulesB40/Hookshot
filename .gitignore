@@ -30,3 +30,9 @@ __pycache__/
 *.ilk
 *.sha1
 *.log
+
+# Android build outputs and local signing identity
+*.so
+*.apk
+*.keystore
+*.jks

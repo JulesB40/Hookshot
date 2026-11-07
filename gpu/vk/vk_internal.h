@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <mutex>
 #include <vector>
 
@@ -196,10 +197,15 @@ enum ProfPhase { PROF_SUBMIT, PROF_PRESENT, PROF_DRAW, PROF_DESC, PROF_TEXGET, P
                  PROF_CMDS, PROF_DISPATCH, PROF_MEMSYNC, PROF_QSUBMIT, PROF_SLOTWAIT, PROF_COUNT };
 extern int64_t prof_ns[PROF_COUNT];
 inline int64_t prof_now() {
+#if defined(__ANDROID__)
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+#else
     LARGE_INTEGER t;
     QueryPerformanceCounter(&t);
     static const int64_t freq = [] { LARGE_INTEGER f; QueryPerformanceFrequency(&f); return f.QuadPart; }();
     return (int64_t)((double)t.QuadPart * 1e9 / (double)freq);
+#endif
 }
 struct ProfScope {
     int phase;
