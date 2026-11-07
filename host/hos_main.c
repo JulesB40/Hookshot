@@ -32,6 +32,10 @@ uint64_t hos_space_end;
 #define GUEST_SPACE HOS_GUEST_SPACE
 #endif
 #define IMAGE_BASE hos_image_base   /* (the lift's: Eden's layout) */
+#if defined(__ANDROID__)
+/* Generated Android A64_MEM loads this pointer instead of embedding 16 TiB. */
+uint8_t *hos_android_guest_base;
+#endif
 
 #ifdef _WIN32
 static void no_power_throttling(void) {
@@ -92,7 +96,7 @@ static void *reserve_large(SIZE_T size) {
 }
 #endif
 
-/* The guest window lives at the constant A64_HOST_BASE (rt/a64.h), so lifted code never loads its base. */
+/* Desktop uses constant A64_HOST_BASE; Android generated code loads the safely relocated base. */
 static int reserve_guest(void) {
 #if defined(A64_MEM_ZERO)
     hos_space_end = (uint64_t)(uintptr_t)&__global_base & ~0xFFFFULL;
@@ -117,8 +121,9 @@ static int reserve_guest(void) {
     return VirtualAlloc((void *)A64_HOST_BASE, GUEST_SPACE, MEM_RESERVE | watch, PAGE_NOACCESS) == (void *)A64_HOST_BASE;
 #elif defined(__ANDROID__)
     static HosGuestArena arena;
-    if (!hos_guest_reserve(&arena, (uintptr_t)A64_HOST_BASE, GUEST_SPACE)) return 0;
+    if (!hos_guest_reserve_relocated(&arena, (uintptr_t)A64_HOST_BASE, GUEST_SPACE)) return 0;
     if (!hos_guest_commit(&arena, 0, GUEST_SPACE)) { hos_guest_release(&arena); return 0; }
+    hos_android_guest_base=(uint8_t*)arena.base;
     return 1;
 #else
     return mmap((void *)A64_HOST_BASE, GUEST_SPACE, PROT_READ | PROT_WRITE,

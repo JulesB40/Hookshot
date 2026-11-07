@@ -34,6 +34,11 @@ static int valid(HosGuestArena* a,size_t offset,size_t bytes) {
         offset%a->page_size || bytes%a->page_size) { errno=EINVAL; return 0; }
     return 1;
 }
+int hos_guest_reserve_relocated(HosGuestArena* a,uintptr_t preferred,size_t bytes) {
+    if (!a || a->base) { errno=EINVAL; return 0; }
+    if (preferred && hos_guest_reserve(a,preferred,bytes)) return 1;
+    return hos_guest_reserve(a,0,bytes);
+}
 int hos_guest_commit(HosGuestArena* a,size_t offset,size_t bytes) {
     if (!valid(a,offset,bytes)) return 0;
     return mprotect((char*)a->base+offset,bytes,PROT_READ|PROT_WRITE)==0;

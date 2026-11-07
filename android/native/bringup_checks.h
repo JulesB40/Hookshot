@@ -3,19 +3,33 @@
 #include "../../host/android/guest_arena.h"
 #include <errno.h>
 #include <dlfcn.h>
-static void test_guest_arena(Probe* p) {
-    HosGuestArena arena={0};
-    if (!hos_guest_reserve(&arena,0x100000000000ULL,1ULL<<39)) {
-        note(p,"Guest arena: cannot reserve 512 GiB at the required 16 TiB base (errno %d).\n",errno); return;
-    }
-    int ok=hos_guest_commit(&arena,0,arena.page_size);
+static int check_arena_page(Probe* p,HosGuestArena* a) {
+    int ok=hos_guest_commit(a,0,a->page_size);
     if (ok) {
-        memset(arena.base,0x5a,arena.page_size);
-        ok=hos_guest_decommit(&arena,0,arena.page_size) && hos_guest_commit(&arena,0,arena.page_size);
-        for (size_t i=0;ok && i<arena.page_size;++i) ok=((unsigned char*)arena.base)[i]==0;
+        memset(a->base,0x5a,a->page_size);
+        ok=hos_guest_decommit(a,0,a->page_size) && hos_guest_commit(a,0,a->page_size);
+        for (size_t i=0;ok && i<a->page_size;++i) ok=((unsigned char*)a->base)[i]==0;
     }
-    note(p,"Guest arena: %s; host page %zu bytes. Only one private page touched; no guest code executed.\n",ok?"PASS":"FAIL",arena.page_size);
-    if (!hos_guest_release(&arena)) note(p,"Guest arena release failed (errno %d).\n",errno);
+    note(p,"Arena page/zeroing check: %s; host page %zu bytes.\n",ok?"PASS":"FAIL",a->page_size);
+    if (!hos_guest_release(a)) note(p,"Arena release failed (errno %d).\n",errno);
+    return ok;
+}
+static void test_guest_arena(Probe* p) {
+    HosGuestArena a={0};
+    if (hos_guest_reserve_relocated(&a,0x100000000000ULL,1ULL<<39)) {
+        note(p,"Full guest arena: 512 GiB reserved at %#llx (relocation allowed).\n",(unsigned long long)(uintptr_t)a.base);
+        check_arena_page(p,&a); return;
+    }
+    note(p,"Full 512 GiB guest arena: unavailable even with relocation (errno %d).\n",errno);
+    const unsigned sizes[]={256,128,64,16};
+    for (unsigned i=0;i<4;++i) {
+        if (!hos_guest_reserve(&a,0,(size_t)sizes[i]<<30)) continue;
+        note(p,"Diagnostic smaller arena: %u GiB at %#llx.\n",sizes[i],(unsigned long long)(uintptr_t)a.base);
+        check_arena_page(p,&a);
+        note(p,"This smaller mapping is NOT used for the game: the high guest addresses still require a layout/mapping port.\n");
+        return;
+    }
+    note(p,"Diagnostic smaller arena: no tested size available (errno %d).\n",errno);
 }
 static void test_renderer_module(Probe* p) {
     void* m=dlopen("libhookshot_vk.so",RTLD_NOW|RTLD_LOCAL);

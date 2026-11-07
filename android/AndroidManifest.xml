@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="dev.julesb40.hookshot.experimental" android:versionCode="2" android:versionName="0.2-renderer-bringup">
+    package="dev.julesb40.hookshot.experimental" android:versionCode="3" android:versionName="0.3-warp-bringup">
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="35" />
     <uses-feature android:name="android.hardware.vulkan.level" android:version="1" android:required="true" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />

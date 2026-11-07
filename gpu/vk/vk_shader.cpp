@@ -1,4 +1,5 @@
 #include "vk_os.h"
+#include "vk_warp_profile.h"
 // NVN2 programs to SPIR-V with Eden's shader recompiler (gpu/vk/eden). A stage's package is its control section
 // (guest memory, 0xd8 bytes: magic 0x98761234, code length +0x38, c1 constants +0x40..+0x44, stage +0x56, workgroup
 // size +0x58) and its code area (GPU memory: a graphics stage's 128-byte header, then the Ampere instructions, then
@@ -410,7 +411,8 @@ Shader::Profile make_profile() {
     p.support_fp32_denorm_preserve = p.support_fp32_denorm_flush = true;
     p.support_fp16_signed_zero_nan_preserve = p.support_fp32_signed_zero_nan_preserve = true;
     p.support_vote = true;
-    p.supported_subgroup_stages = VK_SHADER_STAGE_ALL;
+    const VkSubgroupFeatureFlags needed=VK_SUBGROUP_FEATURE_BASIC_BIT|VK_SUBGROUP_FEATURE_BALLOT_BIT|VK_SUBGROUP_FEATURE_SHUFFLE_BIT;
+    p.supported_subgroup_stages=(dev.subgroup_operations&needed)==needed ? eden_subgroup_stages(dev.subgroup_stages) : 0;
     p.support_viewport_index_layer_non_geometry = true;
     p.support_typeless_image_loads = true;
     p.support_demote_to_helper_invocation = true;
@@ -420,10 +422,11 @@ Shader::Profile make_profile() {
     p.support_scaled_attributes = false;   // (*_UI2F / *_I2F read as integers, converted in the shader: R32 has no scaled format)
     p.support_multi_viewport = true;
     p.support_sampled_image_array_nonuniform_indexing = true;
-    p.warp_size_potentially_larger_than_guest = false;
+    // Reuse Eden's per-32-lane ballot/shuffle/vote partitioning on wave64/128.
+    p.warp_size_potentially_larger_than_guest = dev.subgroup_max>32 || !(dev.subgroup_operations&VK_SUBGROUP_FEATURE_VOTE_BIT);
     p.lower_left_origin_mode = false;
     p.need_declared_frag_colors = false;
-    p.max_subgroup_size = 32;
+    p.max_subgroup_size = dev.subgroup_max;
     p.min_ssbo_alignment = dev.props.limits.minStorageBufferOffsetAlignment;
     return p;
 }
@@ -601,8 +604,13 @@ bool still_valid(const NvnState& s, const Program& p) {
 std::mutex shader_mu;
 std::unordered_map<uint64_t, std::vector<std::unique_ptr<Program>>> programs;   // by the stages' code keys
 std::unordered_map<uint64_t, std::vector<Code>> codes;                          // by program serial
-const Shader::Profile& profile() {
+const Shader::Profile& profile(const Shader::IR::Program& program) {
     static const Shader::Profile p = make_profile();
+    const auto& info=program.info;
+    if ((info.uses_subgroup_vote || info.uses_subgroup_invocation_id || info.uses_subgroup_shuffles ||
+         info.uses_subgroup_mask || info.uses_quad_shuffles || info.uses_cooperative_matrix) &&
+        (!p.SupportsSubgroupStage(program.stage) || dev.subgroup_size<32 || dev.subgroup_max>128))
+        throw std::runtime_error("Guest warp operations unsupported for this stage/subgroup configuration");
     return p;
 }
 
@@ -762,6 +770,10 @@ uint64_t disk_stamp() {
     // lost it)
     const uint64_t translator = HOOKSHOT_SHADER_STAMP;
     add(&translator, sizeof translator);
+    add(&dev.subgroup_size,sizeof dev.subgroup_size);
+    add(&dev.subgroup_max,sizeof dev.subgroup_max);
+    add(&dev.subgroup_stages,sizeof dev.subgroup_stages);
+    add(&dev.subgroup_operations,sizeof dev.subgroup_operations);
     const uint32_t depth = host->depth_minus_w() != 0;   // (d3zessete's PR 54: programs made in either depth mode are kept apart)
     add(&depth, sizeof depth);
     for (char** e = os::environment(); e && *e; e++)
@@ -995,7 +1007,7 @@ void translate_into(Program& p, const NvnState& s, const Code* vsc, const Code* 
                 if ((!kept_one && (Shader::Backend::SPIRV::mma_software || dev.props.vendorID != 0x10DE)) || getenv("RX_VK_NO_F16"))
                     throw std::runtime_error("a network left out on this card");
             }
-            const std::vector<uint32_t> spirv = Shader::Backend::SPIRV::EmitSPIRV(profile(), rt, t->program, bindings);
+            const std::vector<uint32_t> spirv = Shader::Backend::SPIRV::EmitSPIRV(profile(t->program), rt, t->program, bindings);
             if (const char* d = getenv("RX_VK_IR")) {   // (the SPIR-V too, for spirv-val)
                 char name[64];
                 snprintf(name, sizeof name, "spv_%016llx.spv", (unsigned long long)p.key);
@@ -1026,7 +1038,7 @@ void translate_into(Program& p, const NvnState& s, const Code* vsc, const Code* 
             vrt.convert_depth_mode = host->depth_minus_w() != 0;
             Stage v;
             v.nvn_stage = 0;
-            const std::vector<uint32_t> vspirv = Shader::Backend::SPIRV::EmitSPIRV(profile(), vrt, vs->program, bindings);
+            const std::vector<uint32_t> vspirv = Shader::Backend::SPIRV::EmitSPIRV(profile(vs->program), vrt, vs->program, bindings);
             dump_ir(p, "vertex", vs->program);
             {   // (the programs that read the draw's parameters from the driver bank, each once)
                 const auto& ld = vs->program.info.loads;
@@ -1058,7 +1070,7 @@ void translate_into(Program& p, const NvnState& s, const Code* vsc, const Code* 
                         if (frt.color_output_types[i] == Shader::AttributeType::Float) float_targets |= 1u << i;
                     Shader::Optimization::GuardFragmentOutputs(fs->program, float_targets);
                 }
-                const std::vector<uint32_t> fspirv = Shader::Backend::SPIRV::EmitSPIRV(profile(), frt, fs->program, bindings);
+                const std::vector<uint32_t> fspirv = Shader::Backend::SPIRV::EmitSPIRV(profile(fs->program), frt, fs->program, bindings);
                 dump_ir(p, "fragment", fs->program);
                 Stage f;
                 f.nvn_stage = 1;
@@ -1138,7 +1150,7 @@ void translate_mesh_into(Program& p, const NvnState& s, const Code* task, const 
             dump_ir(p, "task", task_t->program, task->key);
             Shader::RuntimeInfo rt{};
             rt.previous_stage_stores.mask.set();
-            const std::vector<uint32_t> spirv = Shader::Backend::SPIRV::EmitSPIRV(profile(), rt, task_t->program, bindings);
+            const std::vector<uint32_t> spirv = Shader::Backend::SPIRV::EmitSPIRV(profile(task_t->program), rt, task_t->program, bindings);
             kept.push_back(spirv);
             Stage st;
             st.nvn_stage = bank_stage(*task);
@@ -1170,7 +1182,7 @@ void translate_mesh_into(Program& p, const NvnState& s, const Code* task, const 
         if (task_t) mrt.previous_stage_stores = task_t->program.info.stores;
         else mrt.previous_stage_stores.mask.set();
         mrt.convert_depth_mode = host->depth_minus_w() != 0;
-        const std::vector<uint32_t> mspirv = Shader::Backend::SPIRV::EmitSPIRV(profile(), mrt, mesh_t->program, bindings);
+        const std::vector<uint32_t> mspirv = Shader::Backend::SPIRV::EmitSPIRV(profile(mesh_t->program), mrt, mesh_t->program, bindings);
         kept.push_back(mspirv);
         Stage ms;
         ms.nvn_stage = bank_stage(mesh);
@@ -1192,7 +1204,7 @@ void translate_mesh_into(Program& p, const NvnState& s, const Code* task, const 
                     frt.per_primitive_generics.set(Shader::IR::GenericAttributeIndex(attribute));
             }
             for (int i = 0; i < 8; i++) frt.color_output_types[i] = static_cast<Shader::AttributeType>(color_types[i]);
-            const std::vector<uint32_t> fspirv = Shader::Backend::SPIRV::EmitSPIRV(profile(), frt, fs->program, bindings);
+            const std::vector<uint32_t> fspirv = Shader::Backend::SPIRV::EmitSPIRV(profile(fs->program), frt, fs->program, bindings);
             kept.push_back(fspirv);
             Stage f;
             f.nvn_stage = 1;

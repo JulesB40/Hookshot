@@ -5,8 +5,9 @@ connected during development. No game launch, correct game frame or playable
 performance has been verified.** This branch is a development checkpoint, not a
 completed Android port.
 
-The v0.2 checkpoint builds the actual ARM64 renderer, adds POSIX guest-memory
-reservation and expands the hardware checks. See [PORTING_PROGRESS.md](PORTING_PROGRESS.md).
+The v0.3 checkpoint enables Eden's wide-subgroup partition path, executes a
+synthetic GPU test of its actual emitters, and probes safe relocated guest-memory
+reservation. The v0.2 screenshot confirms module loading and staging readback. See [PORTING_PROGRESS.md](PORTING_PROGRESS.md).
 
 ## What the APK does
 
@@ -121,6 +122,10 @@ do not uninstall an existing app as a workaround.
 6. Record Android build, driver version and whether using the stock driver.
    **Custom Turnip loading is not implemented**; setting a driver environment
    variable in Termux does not change the driver of this APK.
+
+For v0.3, also record `32-lane partition GPU test` and all `Guest arena` lines.
+Install as an update using the original key; do not uninstall or clear data. A
+smaller diagnostic reservation is never silently used for the game.
 
 Reports are selectable on screen. Optional phone-only log retrieval uses Android
 wireless debugging and Termux's `android-tools`; no PC is needed. Enable wireless

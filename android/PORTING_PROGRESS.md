@@ -1,4 +1,54 @@
-# Android checkpoint v0.2
+# Android checkpoint v0.3
+
+This remains **an incomplete game port**. The user supplied a v0.2 screenshot
+confirming renderer module loading, green presentation, touch counters and owned
+staging roundtrip PASS on the OnePlus 12. It also confirms no requested 32-lane
+subgroups and failure of the fixed 512 GiB guest window at 16 TiB.
+
+## New implementation
+
+- Connect actual subgroup size/range, operation capabilities and converted stage
+  masks to Eden's existing 32-lane partition path. Previously the renderer
+  hardcoded maximum 32 and disabled this path. Unsupported stages fail explicitly.
+- Fix wide-subgroup constant-lane broadcast to use partition-relative shuffle,
+  avoiding invalid broadcast IDs when a 128-lane maximum runs at 64 lanes.
+  Existing HMMA fallback uses partition-local lanes; full guest validation remains.
+- Add an exported synthetic shader generator using the actual Eden lane-ID,
+  ballot, vote, equality mask and index/down shuffle emitters. The APK dispatches
+  128 invocations, reads 12 words per invocation and prints PASS only if every
+  checked result agrees. Ballot(true) checks complete guest warps. This does not
+  test arbitrary divergent shaders, fragment/vertex execution or HMMA.
+- Generated Android guest code loads a relocatable memory-base pointer. Runtime
+  reservation tries the preferred address, then a new kernel-selected mapping.
+  All reservations remain non-overwriting. Host tests preserve occupied data.
+- The APK first tests full 512 GiB relocation. If unavailable, it probes smaller
+  private virtual windows and one committed page, releasing only its own mapping.
+  Smaller windows are diagnostic only: the game's high address layout, heap and
+  GPU tables must be redesigned before a smaller runtime arena can be used.
+
+## Reproduce and test
+
+Renderer/APK build commands below remain applicable. For host shader validation,
+check out SPIRV-Tools tag `vulkan-sdk-1.4.309.0` and build `spirv-val` with the
+matching SPIRV-Headers. Then run:
+
+```sh
+python tests/test_warp_spirv.py --spirv-headers work/android-deps/SPIRV-Headers --spirv-val /absolute/path/to/spirv-val --jobs 1
+```
+
+On the phone, install v0.3 over the existing diagnostic using the same signing key,
+open it, and record the `32-lane partition GPU test` and `Guest arena` lines. No
+uninstall, app-data clearing, game import or storage permission is needed. v0.3
+GPU and relocated-address results are **not yet verified on the device**.
+
+Remaining game blockers include task/mesh-to-compute/indirect lowering, guest-pool
+synchronization without external import, full guest address layout compatibility,
+Horizon host services, guest HID and audio. Turnip loading remains unsupported.
+No actual game launch, correct graphics or FPS has been verified.
+
+---
+
+# Historical Android checkpoint v0.2
 
 The actual Vulkan renderer now builds as `libhookshot_vk.so` for Android ARM64.
 All 182 replay, Eden, Sirit, VMA and texture-decoder translation units compiled,

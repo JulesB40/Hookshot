@@ -14,6 +14,7 @@ typedef struct Probe {
     VkSurfaceKHR surface;
     VkSwapchainKHR swapchain;
     VkQueue queue;
+    uint32_t queue_family;
     VkCommandPool pool;
     VkSemaphore acquired, ready;
     VkFence fence;
@@ -40,6 +41,7 @@ static int extension(const VkExtensionProperties *all, uint32_t count, const cha
     note(p, "%s failed: VkResult %d\n", #call, result); return; } } while (0)
 
 #include "bringup_checks.h"
+#include "warp_checks.h"
 
 static void run_probe(Probe *p) {
     const char *instance_extensions[] = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_ANDROID_SURFACE_EXTENSION_NAME};
@@ -92,6 +94,7 @@ static void run_probe(Probe *p) {
         mesh.taskShader ? "yes" : "no", mesh.meshShader ? "yes" : "no", import_available ? "yes" : "no",
         features.features.textureCompressionASTC_LDR ? "yes" : "no", features.features.textureCompressionBC ? "yes" : "no",
         subgroup.subgroupSize);
+    note(p,"Subgroup operation stages %#x; operations %#x\n",subgroup.supportedStages,subgroup.supportedOperations);
     note(p,"Subgroup control: %s; range %u-%u; required-size stages 0x%x; full compute %s\n",
         control.subgroupSizeControl?"yes":"no",limits.minSubgroupSize,limits.maxSubgroupSize,
         limits.requiredSubgroupSizeStages,control.computeFullSubgroups?"yes":"no");
@@ -101,7 +104,7 @@ static void run_probe(Probe *p) {
     if (!mesh.taskShader || !mesh.meshShader)
         note(p, "GAME BLOCKER: task/mesh to compute+indirect lowering is not implemented. Draws must not be silently dropped.\n");
     if (!import_available) note(p, "GAME BLOCKER: coherent guest buffer upload/write-back fallback needs validation.\n");
-    if (subgroup.subgroupSize != 32) note(p, stages32?"Only stages marked above can request 32 lanes; remaining guest subgroup operations need emulation.\n":"GAME BLOCKER: no stage can request 32 lanes; guest subgroup operations need emulation.\n");
+    if (subgroup.subgroupSize != 32) note(p,"Guest warp compatibility: partitioned 32-lane path configured; see actual GPU test below. Other stages/game shaders remain unverified.\n");
     if (properties.apiVersion < VK_API_VERSION_1_3) note(p, "GAME BLOCKER: upstream renderer needs Vulkan 1.3.\n");
     if (!swap_available) { note(p, "Swapchains unsupported.\n"); return; }
     vkGetPhysicalDeviceQueueFamilyProperties(p->physical, &count, NULL);
@@ -124,6 +127,7 @@ static void run_probe(Probe *p) {
         .pQueueCreateInfos = &queue, .enabledExtensionCount = 1, .ppEnabledExtensionNames = device_extensions};
     TRY(vkCreateDevice(p->physical, &device, NULL, &p->device));
     vkGetDeviceQueue(p->device, family, 0, &p->queue);
+    p->queue_family=family;
     VkSurfaceCapabilitiesKHR caps;
     TRY(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(p->physical, p->surface, &caps));
     if (!(caps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT)) {
@@ -211,6 +215,7 @@ static void run_probe(Probe *p) {
         note(p, "Vulkan clear submitted and presentation accepted (%ux%u). Visually verify a green strip.\n", extent.width, extent.height);
     else note(p, "Presentation failed: %d\n", result);
     test_owned_buffers(p);
+    test_warp_partition(p);
 }
 
 JNIEXPORT jstring JNICALL Java_dev_julesb40_hookshot_MainActivity_nativeProbe(JNIEnv *env, jobject self, jobject surface) {

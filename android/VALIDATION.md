@@ -1,6 +1,30 @@
 # Validation — 2026-11-07
 
-## v0.2 checkpoint
+## v0.3 checkpoint
+
+The user supplied a v0.2 device screenshot: OnePlus CPH2581, Android 16/API 36,
+Adreno 750, Vulkan 1.3.128. It shows a green strip, touch counter, actual renderer
+module loading and a PASS for 4096-byte owned GPU transfer/readback. No task/mesh,
+no host import, subgroup 64, supported range 64–128 and no stage able to request
+32 lanes. The fixed 512 GiB reservation at 16 TiB failed with errno 12.
+
+v0.3 compiles and links 183 actual renderer sources for Android ARM64 with no
+unresolved symbols. The APK has version code 3, the same development certificate,
+zero requested permissions and system-only native dependencies. Signature and
+alignment verification pass. This build has NOT run on the phone yet.
+
+Host validation passed: 14 existing Python regressions, collision-safe relocated
+arena/bounds/zeroing tests, stage-mask conversion, synthetic lifted arithmetic,
+and generated Android memory-base indirection. Generated runtime objects compile
+for Android ARM64. Real Eden warp emitters generated test shaders for maximum
+subgroup sizes 32/64/128; all pass SPIRV-Tools `spirv-val --target-env vulkan1.1`.
+These checks do not prove device execution or full guest shader correctness.
+
+APK SHA256: `278d6f7eed698e2cfe62e3e22b1ca22bcbd4e8bb4d5f9c2e3e00462b89413b38`.
+
+See [PORTING_PROGRESS.md](PORTING_PROGRESS.md) for reproduction and limitations.
+
+## Historical v0.2 build checkpoint
 
 All 182 actual renderer/translator sources compiled and linked for Android ARM64
 with no unresolved symbols. The APK contains the actual renderer, version code 2,

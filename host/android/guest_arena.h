@@ -7,6 +7,9 @@ typedef struct HosGuestArena { void* base; size_t size, page_size; } HosGuestAre
 extern "C" {
 #endif
 int hos_guest_reserve(HosGuestArena* arena, uintptr_t requested, size_t bytes);
+/* Prefer the old address, then accept a fresh kernel-selected reservation.
+ * Does not shrink or alter guest addresses; callers must use the returned base. */
+int hos_guest_reserve_relocated(HosGuestArena* arena, uintptr_t preferred, size_t bytes);
 int hos_guest_commit(HosGuestArena* arena, size_t offset, size_t bytes);
 int hos_guest_decommit(HosGuestArena* arena, size_t offset, size_t bytes);
 int hos_guest_release(HosGuestArena* arena);

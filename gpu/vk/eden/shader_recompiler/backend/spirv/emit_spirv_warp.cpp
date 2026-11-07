@@ -115,6 +115,12 @@ Id ShuffleRelative(EmitContext& ctx, Id value, Id delta, Id src_thread_id, spv::
 }
 
 Id BroadcastLane(EmitContext& ctx, Id value, u32 lane) {
+    // A constant guest lane is not a constant host lane on wave64/128. Avoid
+    // broadcasting from every possible partition: some source IDs would be
+    // outside an executing subgroup smaller than the device's maximum size.
+    if (ctx.profile.warp_size_potentially_larger_than_guest &&
+        !ctx.profile.has_broken_spirv_subgroup_shuffle)
+        return ShuffleAbsolute(ctx, value, HostThreadId(ctx, ctx.Const(lane)));
     Id result{
         ctx.OpGroupNonUniformBroadcast(ctx.U32[1], SubgroupScope(ctx), value, ctx.Const(lane))};
     if (!ctx.profile.warp_size_potentially_larger_than_guest) {

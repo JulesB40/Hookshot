@@ -79,8 +79,26 @@ int main(void) {
     executable = out / "synthetic"
     run([cc, *common, fixture, out / "a64_suyu.c", "-lm", "-o", executable])
     run([executable])
+    # Exercise the generated Android base indirection without a game dump or fixed mapping.
+    relocated = out / "relocated.c"
+    relocated.write_text('''#include "a64.h"
+#include <stdio.h>
+uint8_t *hos_android_guest_base;
+int main(void) {
+    uint8_t first[128] = {0}, second[128] = {0};
+    hos_android_guest_base = first;
+    *A64_PTR(17) = 0x5a;
+    hos_android_guest_base = second;
+    *A64_PTR(17) = 0xa5;
+    if (first[17] != 0x5a || second[17] != 0xa5 || A64_MEM != second) return 1;
+    puts("PASS: generated Android memory base follows relocation without changing the old arena");
+    return 0;
+}
+''')
+    run([cc, *common, "-D__ANDROID__", relocated, "-o", out / "relocated"])
+    run([out / "relocated"])
     if args.target_cc:
-        for source in (fixture, out / "a64_suyu.c"):
+        for source in (fixture, relocated, out / "a64_suyu.c"):
             run([args.target_cc, *common, "-march=armv8.2-a", "-c", source, "-o", out / (source.stem + "-arm64.o")])
         print("Android ARM64 objects compiled. They have NOT executed on the phone.")
 

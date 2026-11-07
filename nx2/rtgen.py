@@ -55,6 +55,10 @@ MARK_NATIVE_64 = r"""extern uint8_t a64_dirty[A64_DIRTY_PAGES];
 
 SUBST = {
     "a64.h": [
+        ("#define A64_MEM ((uint8_t *)A64_HOST_BASE)",
+         "#if defined(__ANDROID__)\nextern uint8_t *hos_android_guest_base;\n"
+         "#define A64_MEM hos_android_guest_base\n#else\n"
+         "#define A64_MEM ((uint8_t *)A64_HOST_BASE)\n#endif"),
         (THREAD, THREAD.replace("\n} GuestContext;", "\n    uint32_t poll;              "
                                 "/* (nx2/rtgen.py) interrupt request: A64_POLL calls a64_poll when set */\n} GuestContext;")),
         (RET_MISMATCH, RET_MISMATCH + POLL_DECL),

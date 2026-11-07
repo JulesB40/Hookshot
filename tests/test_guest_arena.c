@@ -13,6 +13,13 @@ int main(void) {
     // Refuse address collisions rather than replace the existing mapping.
     assert(!hos_guest_reserve(&occupied,(uintptr_t)a.base,page));
     assert(((unsigned char*)a.base)[0]==0x5a);
+    // Relocation must preserve the occupied mapping and choose independent space.
+    assert(hos_guest_reserve_relocated(&occupied,(uintptr_t)a.base,page));
+    assert(occupied.base!=a.base);
+    assert(hos_guest_commit(&occupied,0,page));
+    memset(occupied.base,0xa5,page);
+    assert(((unsigned char*)a.base)[0]==0x5a);
+    assert(hos_guest_release(&occupied));
     assert(!hos_guest_commit(&a,1,page));
     assert(!hos_guest_decommit(&a,0,page+1));
     assert(!hos_guest_commit(&a,a.size,page));
