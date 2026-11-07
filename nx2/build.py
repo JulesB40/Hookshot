@@ -340,7 +340,7 @@ def main():
         vk = os.path.join(GPU, "vk")
         # (what the shader caches are good for: what translates shaders, not the whole DLL, so a build that changes something else
         # keeps them)
-        stamp = hashlib.sha1()
+        stamp = hashlib.sha1(open(os.path.join(os.path.dirname(HOST), "shared", "guest_layout.h"), "rb").read())
         translator = [os.path.join(d, f) for top in ("eden", "sirit", "compat") for d, _, fs in os.walk(os.path.join(vk, top)) for f in fs]
         for f in sorted(translator) + [os.path.join(vk, n) for n in ("vk_shader.cpp", "vk_state.h", "vk_api.h")]:
             with open(f, "rb") as src:
@@ -363,9 +363,9 @@ def main():
             "-I" + os.path.join(vk_headers, "include"), "-I" + vk] +             (["-I" + os.path.join(cpm_package("vulkanmemoryallocator"), "include")] if cpm_package("vulkanmemoryallocator") else [])
         # (Eden's recompiler and sirit see only their own headers: a change to the back end's vk_*.h does not
         # rebuild their ~500 files; the back end itself depends on everything, suyu's texture decoders included)
-        vk_lib_deps = tree_headers(os.path.join(vk, "eden"), os.path.join(vk, "sirit"), os.path.join(vk, "compat"),
+        vk_lib_deps = open(os.path.join(os.path.dirname(HOST), "shared", "guest_layout.h"), "rb").read() + tree_headers(os.path.join(vk, "eden"), os.path.join(vk, "sirit"), os.path.join(vk, "compat"),
                                    os.path.join(GPU, "compat"))
-        vdeps = tree_headers(vk, os.path.join(GPU, "render"), os.path.join(GPU, "compat"),
+        vdeps = open(os.path.join(os.path.dirname(HOST), "shared", "guest_layout.h"), "rb").read() + tree_headers(vk, os.path.join(GPU, "render"), os.path.join(GPU, "compat"),
                              os.path.join(GPU, "third_party", "suyu", "video_core", "textures"))
         for src in vk_sources():
             name = os.path.relpath(src, vk).replace(os.sep, "_")[:-4]

@@ -5,9 +5,9 @@ connected during development. No game launch, correct game frame or playable
 performance has been verified.** This branch is a development checkpoint, not a
 completed Android port.
 
-The v0.3 checkpoint enables Eden's wide-subgroup partition path, executes a
-synthetic GPU test of its actual emitters, and probes safe relocated guest-memory
-reservation. The v0.2 screenshot confirms module loading and staging readback. See [PORTING_PROGRESS.md](PORTING_PROGRESS.md).
+The v0.4 checkpoint shares an experimental 256 GiB CPU/GPU address layout and
+adds high-address and GPU page-index tests. The user's v0.3 screenshot confirms
+that the authored Eden warp-partition compute test passes on Adreno 750. See [PORTING_PROGRESS.md](PORTING_PROGRESS.md).
 
 ## What the APK does
 
@@ -123,9 +123,10 @@ do not uninstall an existing app as a workaround.
    **Custom Turnip loading is not implemented**; setting a driver environment
    variable in Termux does not change the driver of this APK.
 
-For v0.3, also record `32-lane partition GPU test` and all `Guest arena` lines.
-Install as an update using the original key; do not uninstall or clear data. A
-smaller diagnostic reservation is never silently used for the game.
+For v0.4, also record `Compact page-index GPU test`, `Compact high-address CPU
+test` and `Compact guest arena`. Install as an update using the original key;
+do not uninstall or clear data. The compact layout is experimental and game
+execution remains unverified.
 
 Reports are selectable on screen. Optional phone-only log retrieval uses Android
 wireless debugging and Termux's `android-tools`; no PC is needed. Enable wireless

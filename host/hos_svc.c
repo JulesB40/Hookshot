@@ -12,8 +12,8 @@
 #define R_OK 0
 /* (mkw-recomp) the region of GetInfo 29/30: 128 GB at 192 GB, between the heap (up from 64 GB) and the address
    regions (down from 512 GB); the SDK's VAMM backs pieces of it with MapPhysicalMemory */
-#define HOS_NX2_REGION_BASE 0x3000000000ULL
-#define HOS_NX2_REGION_SIZE 0x2000000000ULL
+#define HOS_NX2_REGION_BASE HK_GUEST_VAMM_BASE
+#define HOS_NX2_REGION_SIZE HK_GUEST_VAMM_BYTES
 #define R_INVALID_ENUM 0xF001   /* svc::ResultInvalidEnumValue */
 
 static uint64_t get_info(uint32_t id0, uint64_t id1, int *ok) {

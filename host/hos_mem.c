@@ -1,5 +1,5 @@
 /* Guest memory map: the system region (our own objects), the heap, address regions.
-   The whole 4 GB window is committed up front (hos_main.c), so "mapping" here is only bookkeeping and zeroing. */
+   The reserved guest window follows guest_layout.h; physical pages are committed as needed. */
 #include "hos.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -79,6 +79,12 @@ uint64_t hos_region_alloc(uint64_t size, uint64_t align) {
         uint64_t bottom = i < nregions ? regions[i].addr + regions[i].size : HOS_HEAP_BASE + hos_heap_size;
         if (top >= size) {
             uint64_t a = (top - size) & ~(align - 1);
+#if defined(__ANDROID__)
+            /* Keep the SDK's separately reported VAMM window out of normal regions. */
+            if (a < HK_GUEST_VAMM_BASE+HK_GUEST_VAMM_BYTES && top > HK_GUEST_VAMM_BASE) {
+                a=size<=HK_GUEST_VAMM_BASE ? (HK_GUEST_VAMM_BASE-size)&~(align-1) : 0;
+            }
+#endif
             if (a >= bottom && a >= HOS_HEAP_BASE + hos_heap_size) { found = a; at = i; break; }
         }
         if (i < nregions) top = regions[i].addr;
@@ -178,7 +184,11 @@ void hos_mark_written(const void *p, size_t n) {
 HLE(_ZN2nn2os17SetMemoryHeapSizeEm) {
     uint64_t size = ARG(0);
     HOS_TRACE_CALL("SetMemoryHeapSize");
-    if (HOS_HEAP_BASE + size > (region_floor < HOS_SPACE_END ? region_floor : HOS_SPACE_END)) {
+    uint64_t heap_end_limit=region_floor < HOS_SPACE_END ? region_floor : HOS_SPACE_END;
+#if defined(__ANDROID__)
+    if (heap_end_limit>HK_GUEST_VAMM_BASE) heap_end_limit=HK_GUEST_VAMM_BASE;
+#endif
+    if (HOS_HEAP_BASE>heap_end_limit || size>heap_end_limit-HOS_HEAP_BASE) {
         hos_log("SetMemoryHeapSize(%#llx): collides with address regions at %#llx", (unsigned long long)size,
                 (unsigned long long)region_floor);
         RET(0xCA01);   /* svc::ResultOutOfMemory */
@@ -236,7 +246,10 @@ HLE(_ZN2nn2os17FreeAddressRegionEm) {
 /* nn::os::AllocateMemoryPages(unsigned long, unsigned long) -> Result: new pages read as zero */
 HLE(_ZN2nn2os19AllocateMemoryPagesEmm) {
     HOS_TRACE_CALL("AllocateMemoryPages");
-    const uint64_t a = ARG(0), n = ARG(1), end = a + n;
+    const uint64_t a = ARG(0), n = ARG(1);
+    if (a >= HOS_GUEST_SPACE || n > HOS_GUEST_SPACE-a) { RET(0xCA01); return; }
+    if (!n) { RET(0); return; }
+    const uint64_t end=a+n;
     static int zero_all = -1;
     if (zero_all < 0) zero_all = getenv("HOS_ZERO_ALL_PAGES") != NULL;
     if (end > (1ULL << 32) && !zero_all) {
@@ -277,13 +290,21 @@ HLE(_ZN2nn2os19AllocateMemoryPagesEmm) {
 /* nn::os::FreeMemoryPages(unsigned long, unsigned long) -> Result */
 HLE(_ZN2nn2os15FreeMemoryPagesEmm) {
     HOS_TRACE_CALL("FreeMemoryPages");
+    if (ARG(0)>=HOS_GUEST_SPACE || ARG(1)>HOS_GUEST_SPACE-ARG(0)) { RET(0xCA01); return; }
+    if (!ARG(1)) { RET(0); return; }
     if (ARG(0) + ARG(1) > (1ULL << 32)) {   /* (mkw-recomp: the pair of AllocateMemoryPages' commit above) */
         const uint64_t lo = (ARG(0) + 0xFFF) & ~0xFFFULL, hi = (ARG(0) + ARG(1)) & ~0xFFFULL;
         /* (pages the Vulkan back end imported, as part of a pool's 16 MB chunk, stay committed and are zeroed: the GPU
            still maps them, and decommitted pages under an import faulted the device. Read as zero, as freed pages) */
         extern int rx_guest_imported(uint64_t lo, uint64_t hi);
         if (hi > lo && rx_guest_imported(lo, hi)) memset(GP(lo), 0, (size_t)(hi - lo));
-        else if (hi > lo) VirtualFree(GP(lo), (SIZE_T)(hi - lo), MEM_DECOMMIT);
+        else if (hi > lo) {
+#if defined(_WIN32)
+            VirtualFree(GP(lo), (SIZE_T)(hi-lo), MEM_DECOMMIT);
+#else
+            discard_pages(lo,hi-lo);
+#endif
+        }
         RET(0);
         return;
     }

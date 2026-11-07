@@ -18,6 +18,7 @@
 #include "common/div_ceil.h"
 #include "shader_recompiler/backend/spirv/emit_spirv.h"
 #include "shader_recompiler/backend/spirv/spirv_emit_context.h"
+#include "shader_recompiler/backend/spirv/guest_page_lookup.h"
 
 namespace Shader::Backend::SPIRV {
 namespace {
@@ -983,14 +984,6 @@ void EmitContext::DefineWriteStorageCasLoopFunction(const Info& info) {
     write_storage_cas_loop_func = func;
 }
 
-// (hookshot) The page table of guest memory for pointers no bound buffer holds: 4 KB pages from this base, a device address each
-constexpr unsigned long long kGuestPagesBase = 0x1000000000ull;
-constexpr unsigned long long kGuestPagesBytes = 8ull << 30;
-// (a second window, its entries after the first's: the pools the game's GPU allocator puts at 0x7fxxxxxxxx, where its storage
-// buffers are. Pointers there read 0 with the first alone)
-constexpr unsigned long long kGuestPagesBase2 = 0x7f00000000ull;
-constexpr unsigned long long kGuestPagesBytes2 = 4ull << 30;
-
 void EmitContext::DefineGlobalMemoryFunctions(const Info& info) {
     if (!info.uses_global_memory || !profile.support_int64) {
         return;
@@ -1048,13 +1041,9 @@ void EmitContext::DefineGlobalMemoryFunctions(const Info& info) {
                            ? OpLoad(U64, OpAccessChain(TypePointer(spv::StorageClass::PushConstant, U64), rescaling_push_constants,
                                                        Const(guest_pages_member_index)))
                            : Constant(U64, u64{0})};   // (pushed: the table's device address, 0 for none)
-        const Id offset_a{OpISub(U64, addr, Constant(U64, u64{kGuestPagesBase}))};
-        const Id offset_b{OpISub(U64, addr, Constant(U64, u64{kGuestPagesBase2}))};
-        const Id in_a{OpULessThan(U1, offset_a, Constant(U64, u64{kGuestPagesBytes}))};
-        const Id in_b{OpULessThan(U1, offset_b, Constant(U64, u64{kGuestPagesBytes2}))};
-        const Id page_index{OpSelect(U64, in_a, OpShiftRightLogical(U64, offset_a, Const(12U)),
-                                     OpIAdd(U64, OpShiftRightLogical(U64, offset_b, Const(12U)), Constant(U64, u64{kGuestPagesBytes >> 12})))};
-        const Id inside{OpLogicalAnd(U1, OpLogicalOr(U1, in_a, in_b), OpINotEqual(U1, table, Constant(U64, u64{0})))};
+        const auto lookup=EmitGuestPageLookup(*this,addr);
+        const Id page_index=lookup.index;
+        const Id inside=OpLogicalAnd(U1,lookup.inside,OpINotEqual(U1,table,Constant(U64,u64{0})));
         const Id then_label{OpLabel()};
         const Id else_label{OpLabel()};
         OpSelectionMerge(else_label, spv::SelectionControlMask::MaskNone);

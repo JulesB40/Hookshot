@@ -47,7 +47,7 @@ def main():
     for h in ('algorithm', 'cstdio', 'cstdlib', 'cstring', 'functional', 'string', 'vector'): flags += ['-include', h]
     flags += ['-I' + str(i) for i in includes]
     def headers(dirs):
-        digest = hashlib.sha256((str(cc.resolve()) + ' '.join(flags)).encode() + subprocess.check_output([str(cc), '--version']))
+        digest = hashlib.sha256((ROOT / 'shared/guest_layout.h').read_bytes() + (str(cc.resolve()) + ' '.join(flags)).encode() + subprocess.check_output([str(cc), '--version']))
         for d in dirs:
             for h in sorted(d.rglob('*.h')) + sorted(d.rglob('*.hpp')): digest.update(str(h).encode() + h.read_bytes())
         return digest.digest()

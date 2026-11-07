@@ -3,7 +3,7 @@
 a64-kit maps all guest memory below 4 GB (`A64_MEM + (uint32_t)addr`): its own loader picks every address. MKW
 does not fit: a 39-bit address space, ~9.5 GiB of planned memory on the 12 GB layout, 2x 5.7 GiB sparse GPU
 regions. With A64_ADDR64 (defined by the generated header) an access is `A64_MEM + addr` over a reservation of the
-whole 39-bit space (Eden's fastmem arena, or our own), and lookups of code addresses refuse anything above 4 GB
+platform window (desktop 39-bit, experimental Android 38-bit), and lookups of code addresses refuse anything above 4 GB
 instead of truncating it (code always lies below: Eden loads it at 0x80000000).
 
 It also adds the interrupt flag and A64_POLL that nx2/poll.py's loop-header polls use.
@@ -29,7 +29,8 @@ ADDR64 = r"""#ifndef A64_ADDR64
 #endif
 #if A64_ADDR64
 #define A64_PTR(a) (A64_MEM + (uint64_t)(a))
-#define A64_DIRTY_PAGES (1ull << 27)   /* (nx2/rtgen.py) A64_WRITE_TRACK: a mark per 4 KB page of the 512 GB window */
+#include "hookshot_guest_layout.h"
+#define A64_DIRTY_PAGES (HK_GUEST_BYTES >> 12)   /* one mark per guest page */
 #else
 #define A64_DIRTY_PAGES (1ull << 20)
 #define A64_PTR(a) (A64_MEM + (uint32_t)(a))
@@ -75,6 +76,9 @@ SUBST = {
 
 def write(out_dir):
     os.makedirs(out_dir, exist_ok=True)
+    import pathlib
+    layout = pathlib.Path(__file__).resolve().parents[1] / "shared/guest_layout.h"
+    pathlib.Path(out_dir, "hookshot_guest_layout.h").write_bytes(layout.read_bytes())
     for name, subs in SUBST.items():
         text = open(os.path.join(kit.KIT, "rt", name), encoding="utf-8").read()
         for old, new in subs:

@@ -26,6 +26,7 @@
 #endif
 
 #include "vk_internal.h"
+#include "../../shared/guest_layout.h"
 #include "vk_texture.h"   // (upload_command_buffer)
 
 namespace mkwvk {
@@ -177,8 +178,8 @@ uint64_t* guest_pages = nullptr;
 uint64_t guest_pages_address = 0;
 void guest_pages_set(uint64_t lo, uint64_t hi, uint64_t address) {
     if (!guest_pages) return;
-    // (two windows, as spirv_emit_context.cpp reads them: 8 GB from 0x1000000000, then 4 GB from 0x7f00000000)
-    const struct { uint64_t base, bytes, first; } windows[] = {{0x1000000000ull, 8ull << 30, 0}, {0x7f00000000ull, 4ull << 30, (8ull << 30) >> 12}};
+    // Windows and indices share the CPU allocator / shader layout.
+    const struct { uint64_t base, bytes, first; } windows[] = {{HK_GUEST_PAGES_BASE, HK_GUEST_PAGES_BYTES, 0}, {HK_GUEST_PAGES_BASE2, HK_GUEST_PAGES_BYTES2, HK_GUEST_PAGES_BYTES >> 12}};
     for (const auto& w : windows)
         for (uint64_t a = std::max(lo, w.base) & ~0xFFFull; a < std::min(hi, w.base + w.bytes); a += 0x1000)
             guest_pages[w.first + ((a - w.base) >> 12)] = address ? address + (a - lo) : 0;
@@ -194,7 +195,7 @@ uint64_t memory_guest_pages() {
     VkBuffer b = VK_NULL_HANDLE;
     VmaAllocation a = nullptr;
     void* mapped = nullptr;
-    const uint64_t bytes = ((8ull << 30 >> 12) + (4ull << 30 >> 12)) * 8;
+    const uint64_t bytes = HK_GUEST_PAGE_COUNT * 8;
     if (!create_buffer(bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, true, b, a, &mapped) || !mapped) {
         logf("vk: no page table of guest memory: pointers in no bound buffer read as 0");
         return 0;

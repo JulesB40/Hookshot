@@ -9,10 +9,13 @@
      0x01000000 - 0x07000000      system region: our own guest objects (main stack, TLS blocks, thread regions)
      0x80000000 - image end       rtld, main, subsdk0, subsdk1, sdk in Eden's layout (hos_image_base, the lift's)
      0x1000000000 - ...           heap (SetMemoryHeapSize), up from 64 GB
-     ... - 0x8000000000           address regions (AllocateAddressRegion), down from 512 GB */
+     ... - 0x8000000000           address regions (AllocateAddressRegion), down from 512 GB
+   Android experimental compact layout ends at 256 GiB; shared/guest_layout.h also
+   moves the SDK VAMM and GPU page-table window. No actual game is validated. */
 #ifndef HOS_H
 #define HOS_H
 #include "a64.h"
+#include "../shared/guest_layout.h"
 #include <stdarg.h>
 
 #define HLE(sym) void imp_##sym(Ctx *c)
@@ -42,8 +45,8 @@
 
 #define HOS_SYSTEM_BASE 0x01000000ULL
 #define HOS_SYSTEM_END 0x07000000ULL
-#define HOS_HEAP_BASE 0x1000000000ULL
-#define HOS_GUEST_SPACE (1ULL << 39)
+#define HOS_HEAP_BASE HK_GUEST_HEAP_BASE
+#define HOS_GUEST_SPACE HK_GUEST_BYTES
 extern const uint64_t hos_image_base, hos_image_end;   /* (gen/hos_image.c) */
 extern const uint64_t hos_program_id;                  /* (gen/hos_image.c: main.npdm's) */
 extern const char hos_main_build_id[];                 /* (gen/hos_image.c: main's NSO build id, hex) */
@@ -65,7 +68,7 @@ void web_mark_written(const void *p, size_t n);   /* (hos/web/win32.c: guest mem
 extern uint64_t hos_space_end;   /* web: the guest window ends where the host's own data starts (hos_main.c) */
 #define HOS_SPACE_END hos_space_end
 #else
-#define HOS_SPACE_END 0x8000000000ULL
+#define HOS_SPACE_END HK_GUEST_BYTES
 #endif
 #define HOS_TICK_HZ 31250000ULL   /* (mkw-recomp: the Switch 2 counter; the SDK checks it at init) */
 

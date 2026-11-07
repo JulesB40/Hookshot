@@ -1,4 +1,75 @@
-# Android checkpoint v0.3
+# Android checkpoint v0.4 — experimental compact layout
+
+The Android host and Vulkan translator now share `shared/guest_layout.h` instead
+of independently assuming a 512 GiB window. Android uses a 256 GiB reservation;
+heap base remains 64 GiB and the upper pointer-following window moves from
+508–512 GiB to 252–256 GiB. Desktop retains its previous 512 GiB layout.
+
+The SDK VAMM range moves from 192–320 GiB to 96–160 GiB on Android. GetInfo 29/30
+uses these shared bounds. The Android HLE allocator skips this reserved interval,
+and heap expansion refuses to overlap it or allocated regions. Generated runtime
+headers use the same size for write tracking. Shader and object cache keys include
+the layout header. No address bits are masked to fit an out-of-range guest pointer.
+
+`hos_mem.c` now compiles for Android ARM64: high-page frees use POSIX discard
+instead of an unconditional `VirtualFree`. Page allocate/free calls reject
+out-of-arena and overflowing ranges before touching memory.
+
+## What the v0.4 APK verifies
+
+- It reserves the actual proposed 256 GiB layout using only fresh private mappings.
+  It writes distinct markers at system/image/heap addresses, both SDK VAMM edges,
+  the upper GPU window and the final page; it checks no aliasing, independent
+  decommit/zeroing and rejection of an out-of-bounds commit. Only a few physical
+  pages are touched, then its entire private reservation is released.
+- A compute shader uses the **same production `EmitGuestPageLookup` helper** as
+  Eden's global-memory pointer-following code. Sixteen runtime-supplied addresses
+  cover both windows, boundary misses, the old 508 GiB address and UINT64_MAX.
+  CPU checks hit/miss and every output page index. `shaderInt64` is queried and
+  enabled only when supported. Lack of capability is reported explicitly.
+- Existing authored warp partition and owned-staging tests remain in the APK.
+
+The new GPU test validates page-index arithmetic, **not physical GPU pointer
+dereferencing or real guest shaders**. The actual HLE allocator is exercised by
+host tests and cross-compiled, not linked into this diagnostic APK.
+
+## Validation and phone-only reproduction
+
+Host tests execute the actual `host/hos_mem.c` with generated Android guest
+pointers: allocation at the high end, neighboring writes, free/recommit zeroing,
+region reuse, VAMM exclusion, heap collision rejection and invalid page ranges.
+They also check desktop layout constants. Android ARM64 compilation passes.
+
+```sh
+python tests/test_compact_layout.py --target-cc /absolute/path/to/aarch64-linux-android28-clang
+python tests/test_warp_spirv.py --android-layout --spirv-headers work/android-deps/SPIRV-Headers --spirv-val /absolute/path/to/spirv-val --jobs 1
+```
+
+The existing Termux renderer/APK instructions below and in README.md apply to
+v0.4 without a PC. Preserve the existing signing key and build directories. The
+native Termux build itself has not been executed on a phone by the developer.
+
+Install as an update, open the app and record **Compact page-index GPU test**,
+**Compact high-address CPU test**, **Compact guest arena**, plus any errors.
+No game import or storage permission is needed. A v0.4 phone run is pending.
+
+## Remaining compatibility work
+
+This compact layout is an experimental port, not a proven replacement for the
+game's original address space. A real guest may rely on fixed upper addresses or
+a larger VAMM range. Such accesses must be ported or rejected, never wrapped.
+VAMM mapping behavior, real GPU pointer dereference and guest-pool synchronization
+remain unverified. The rest of `hos_svc.c` still depends on Win32 synchronization.
+
+Task/mesh-to-compute/indirect lowering, coherent guest-pool upload/write-back,
+remaining Horizon services, guest HID, audio and actual game launch remain
+incomplete. The renderer still refuses unsupported mesh/import setup. Custom
+Turnip loading, game graphics correctness and playable performance are unverified.
+No original game data, installations or saves are opened by the diagnostic.
+
+---
+
+# Historical Android checkpoint v0.3
 
 This remains **an incomplete game port**. The user supplied a v0.2 screenshot
 confirming renderer module loading, green presentation, touch counters and owned

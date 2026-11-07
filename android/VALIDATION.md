@@ -1,6 +1,26 @@
 # Validation — 2026-11-07
 
-## v0.3 checkpoint
+## v0.4 build checkpoint
+
+- Android ARM64 renderer: all 184 actual source units compiled; shared link with
+  `--no-undefined` passed. JNI C build with `-Wall -Wextra -Werror` passed.
+- APK: version code 4, original development certificate, same isolated package,
+  zero requested permissions, system-only native dependencies; signature verified.
+- Actual compact HLE allocator executed on Linux with generated Android pointers:
+  high region allocation, neighbor preservation, page zeroing/reuse, SDK VAMM
+  exclusion, heap collision and invalid page-range rejection passed. The same
+  HLE translation unit compiled for Android ARM64; it did not execute on phone.
+- Generated lifted arithmetic/runtime tests passed and compile to ARM64 objects.
+- Real Eden warp shaders (32/64/128 maximum lanes) and the new production page-index
+  shader generated with Android layout all pass `spirv-val --target-env vulkan1.1`.
+- All 14 existing Python safety/cache regressions passed; `git diff --check` clean.
+- **v0.4 device execution: NOT TESTED yet.** No new game launch, graphics or FPS claim.
+
+APK SHA256: `124cdb500b9382e03e18d37f25a497f5f0ae127ef546b3c0de76c9b56ec46bba`.
+
+Details, phone reproduction and remaining limits: [PORTING_PROGRESS.md](PORTING_PROGRESS.md).
+
+## Historical v0.3 checkpoint
 
 The user supplied a v0.2 device screenshot: OnePlus CPH2581, Android 16/API 36,
 Adreno 750, Vulkan 1.3.128. It shows a green strip, touch counter, actual renderer

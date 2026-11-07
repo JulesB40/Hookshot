@@ -16,19 +16,21 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--spirv-headers',type=Path,required=True)
     p.add_argument('--spirv-val',type=Path)
+    p.add_argument('--android-layout',action='store_true',help='Generate with the Android compact layout')
     p.add_argument('--jobs',type=int,default=4)
     a=p.parse_args()
     cxx=shutil.which('g++')
     if not cxx: raise SystemExit('Host g++ required')
     vk=ROOT/'gpu/vk'
-    sources=sorted((vk/'eden').rglob('*.cpp'))+sorted((vk/'sirit/src').rglob('*.cpp'))+[vk/'vk_warp_test.cpp']
+    sources=sorted((vk/'eden').rglob('*.cpp'))+sorted((vk/'sirit/src').rglob('*.cpp'))+[vk/'vk_warp_test.cpp',vk/'vk_layout_test.cpp']
     out=Path(tempfile.mkdtemp(prefix='warp-spirv-',dir=ROOT/'work'))
     cache=ROOT/'work/host-warp-objects';cache.mkdir(exist_ok=True)
     flags=['-std=c++23','-O0','-fPIC','-w']
+    if a.android_layout: flags+=['-D__ANDROID__']
     for h in ['algorithm','cstdio','cstdlib','cstring','functional','string','vector']: flags+=['-include',h]
     includes=[vk/'compat',ROOT/'gpu/compat',vk/'eden',vk/'sirit/include',vk/'sirit/src',a.spirv_headers.resolve()/'include',a.spirv_headers.resolve()/'include/spirv/unified1']
     flags+=['-I'+str(d) for d in includes]
-    deps=hashlib.sha256((' '.join(flags)+subprocess.check_output([cxx,'--version'],text=True)).encode())
+    deps=hashlib.sha256((ROOT/'shared/guest_layout.h').read_bytes()+(' '.join(flags)+subprocess.check_output([cxx,'--version'],text=True)).encode())
     for directory in includes:
         for f in sorted(directory.rglob('*.h'))+sorted(directory.rglob('*.hpp')): deps.update(f.read_bytes())
     def compile_one(src):
@@ -59,5 +61,12 @@ def main():
         path=out/f'warp{lanes}.spv';path.write_bytes(bytes(words))
         if a.spirv_val: subprocess.run([str(a.spirv_val),'--target-env','vulkan1.1',str(path)],check=True)
         print(f'PASS: real Eden emitters generated {lanes}-lane partition test ({n} words); GPU execution not tested')
+    layout=dll.hookshot_vk_layout_test_spirv
+    layout.argtypes=emit.argtypes;layout.restype=ctypes.c_size_t
+    n=layout(None,0,0);assert 5<n<100000
+    words=(ctypes.c_uint32*n)();assert layout(words,n,0)==n
+    path=out/'layout.spv';path.write_bytes(bytes(words))
+    if a.spirv_val: subprocess.run([str(a.spirv_val),'--target-env','vulkan1.1',str(path)],check=True)
+    print('PASS: production guest-page lookup emitter generated layout shader; GPU execution not tested')
     print('Shaders:',out)
 if __name__=='__main__': main()

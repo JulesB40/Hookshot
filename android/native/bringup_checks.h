@@ -2,6 +2,7 @@
 #include "../../gpu/vk/vk_owned_buffer.h"
 #include "../../host/android/guest_arena.h"
 #include <errno.h>
+#include "../../shared/guest_layout.h"
 #include <dlfcn.h>
 static int check_arena_page(Probe* p,HosGuestArena* a) {
     int ok=hos_guest_commit(a,0,a->page_size);
@@ -16,20 +17,28 @@ static int check_arena_page(Probe* p,HosGuestArena* a) {
 }
 static void test_guest_arena(Probe* p) {
     HosGuestArena a={0};
-    if (hos_guest_reserve_relocated(&a,0x100000000000ULL,1ULL<<39)) {
-        note(p,"Full guest arena: 512 GiB reserved at %#llx (relocation allowed).\n",(unsigned long long)(uintptr_t)a.base);
-        check_arena_page(p,&a); return;
+    if (!hos_guest_reserve_relocated(&a,0x100000000000ULL,HK_GUEST_BYTES)) {
+        note(p,"Compact guest arena: cannot reserve %llu GiB (errno %d).\n",HK_GUEST_BYTES>>30,errno); return;
     }
-    note(p,"Full 512 GiB guest arena: unavailable even with relocation (errno %d).\n",errno);
-    const unsigned sizes[]={256,128,64,16};
-    for (unsigned i=0;i<4;++i) {
-        if (!hos_guest_reserve(&a,0,(size_t)sizes[i]<<30)) continue;
-        note(p,"Diagnostic smaller arena: %u GiB at %#llx.\n",sizes[i],(unsigned long long)(uintptr_t)a.base);
-        check_arena_page(p,&a);
-        note(p,"This smaller mapping is NOT used for the game: the high guest addresses still require a layout/mapping port.\n");
-        return;
+    note(p,"Compact guest arena: %llu GiB at %#llx; GPU upper window %#llx.\n",HK_GUEST_BYTES>>30,
+        (unsigned long long)(uintptr_t)a.base,HK_GUEST_PAGES_BASE2);
+    note(p,"Compact SDK VAMM window: %llu..%llu GiB (reserved by experimental host allocator).\n",HK_GUEST_VAMM_BASE>>30,(HK_GUEST_VAMM_BASE+HK_GUEST_VAMM_BYTES)>>30);
+    const uint64_t offsets[]={0x1000000,0x80000000,HK_GUEST_HEAP_BASE,HK_GUEST_PAGES_BASE2,HK_GUEST_BYTES-a.page_size,HK_GUEST_VAMM_BASE,HK_GUEST_VAMM_BASE+HK_GUEST_VAMM_BYTES-a.page_size};
+    int ok=1;
+    for (unsigned i=0;i<7;++i) {
+        if (!hos_guest_commit(&a,offsets[i],a.page_size)) { ok=0; break; }
+        *(uint64_t*)((char*)a.base+offsets[i])=0x12340000u+i;
     }
-    note(p,"Diagnostic smaller arena: no tested size available (errno %d).\n",errno);
+    for (unsigned i=0;ok && i<7;++i) ok=*(uint64_t*)((char*)a.base+offsets[i])==0x12340000u+i;
+    if (ok) {
+        ok=hos_guest_decommit(&a,offsets[3],a.page_size) && hos_guest_commit(&a,offsets[3],a.page_size);
+        for (size_t i=0;ok && i<a.page_size;++i) ok=((unsigned char*)a.base)[offsets[3]+i]==0;
+        for (unsigned i=0;ok && i<7;++i) if (i!=3) ok=*(uint64_t*)((char*)a.base+offsets[i])==0x12340000u+i;
+    }
+    ok=ok && !hos_guest_commit(&a,HK_GUEST_BYTES,a.page_size) && hk_guest_page_index(0x7f00000000ULL)==UINT64_MAX;
+    note(p,"Compact high-address CPU test: %s (system, image, heap, VAMM edges, upper GPU window, last page; no alias; zeroing).\n",ok?"PASS":"FAIL");
+    check_arena_page(p,&a);
+    note(p,"Experimental compact layout only: real guest pointers/allocations and game execution remain unverified.\n");
 }
 static void test_renderer_module(Probe* p) {
     void* m=dlopen("libhookshot_vk.so",RTLD_NOW|RTLD_LOCAL);

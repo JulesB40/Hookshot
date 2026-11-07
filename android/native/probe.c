@@ -42,6 +42,7 @@ static int extension(const VkExtensionProperties *all, uint32_t count, const cha
 
 #include "bringup_checks.h"
 #include "warp_checks.h"
+#include "layout_checks.h"
 
 static void run_probe(Probe *p) {
     const char *instance_extensions[] = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_ANDROID_SURFACE_EXTENSION_NAME};
@@ -123,8 +124,9 @@ static void run_probe(Probe *p) {
     VkDeviceQueueCreateInfo queue = {.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, .queueFamilyIndex = family,
         .queueCount = 1, .pQueuePriorities = &priority};
     const char *device_extensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    VkPhysicalDeviceFeatures enabled_features={.shaderInt64=features.features.shaderInt64};
     VkDeviceCreateInfo device = {.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, .queueCreateInfoCount = 1,
-        .pQueueCreateInfos = &queue, .enabledExtensionCount = 1, .ppEnabledExtensionNames = device_extensions};
+        .pEnabledFeatures=&enabled_features, .pQueueCreateInfos = &queue, .enabledExtensionCount = 1, .ppEnabledExtensionNames = device_extensions};
     TRY(vkCreateDevice(p->physical, &device, NULL, &p->device));
     vkGetDeviceQueue(p->device, family, 0, &p->queue);
     p->queue_family=family;
@@ -216,6 +218,7 @@ static void run_probe(Probe *p) {
     else note(p, "Presentation failed: %d\n", result);
     test_owned_buffers(p);
     test_warp_partition(p);
+    test_compact_gpu_layout(p);
 }
 
 JNIEXPORT jstring JNICALL Java_dev_julesb40_hookshot_MainActivity_nativeProbe(JNIEnv *env, jobject self, jobject surface) {
