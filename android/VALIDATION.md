@@ -1,6 +1,51 @@
 # Validation — 2026-11-07
 
-## v0.9 build checkpoint
+## v0.10 build checkpoint
+
+- 186-source ARM64 renderer links with no undefined symbols; exported
+  `hk_pool_capture`, `hk_pool_submitted`, `hk_pool_writeback` verified in ELF.
+- Actual ownership implementation passes strict host C++ tests and address/UB
+  sanitizers. LeakSanitizer cannot operate under the host's ptrace; rerun with
+  `ASAN_OPTIONS=detect_leaks=0` passes. No successful leak scan is claimed.
+- Host tests include a CPU writer thread and injected noncoherent cache failures;
+  newer guest memory and GPU results are preserved on conflict.
+- JNI C with `-Wall -Wextra -Werror`, Java/DEX/APK/signature verification pass.
+  Original package/certificate, version code 10, zero permissions.
+- All 14 Python safety/cache regressions pass. Prior shader code/lowering is
+  unchanged; the same diagnostics remain in the APK.
+- **Owned-pool phone test pending.** Replay import integration remains disabled;
+  guest CPU read waits/retirement hooks and full game execution are incomplete.
+
+APK SHA256: `73197d566c7fdc19bc9030a0001f904109412d4f53696c4f4cec958f2d33e3ad`.
+
+Host ownership reproduction (Linux with a C++20 compiler and Vulkan headers):
+
+```sh
+g++ -std=c++20 -pthread -Wall -Wextra -Werror -Igpu/vk tests/test_owned_pool.cpp gpu/vk/vk_owned_pool.cpp -o work/test_owned_pool
+work/test_owned_pool
+```
+
+If only NDK Vulkan headers are present, add `-idirafter /path/to/ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include`.
+
+## User-supplied v0.9 result
+
+[Report excerpt](device-results/oneplus12-v09-key-results.txt), supplied by user;
+no direct ADB run. Same OnePlus CPH2581 / Android 16 / Adreno 750 / driver 0x802fa029.
+
+| Check | Observed result |
+|---|---|
+| Actual Eden lowered Int64 arithmetic | **PASS 64/64 rows**, all 16 words; shifts 0..63 |
+| Lowered shader | 1104 words, fingerprint 0x330fc09, no Int64 type or bitcast |
+| Numeric conversion helpers | PASS 64/64 |
+| Native Int64 arithmetic | FAIL 0/64 matching rows |
+| Native Int64 literal one | Low 1, high 0, correctly encoded |
+| Staging / warp / CPU high-address / page zeroing | PASS |
+| Full game launch / graphics / saves / FPS | NOT TESTED |
+
+This validates the authored arithmetic lowering path on the device, not all
+shader operations, physical pointers, atomic semantics or real game rendering.
+
+## Historical v0.9 build checkpoint
 
 - 185-source Android ARM64 renderer link with no undefined symbols; warning-clean
   JNI C, Java/DEX/APK build and signature verification pass. Original certificate

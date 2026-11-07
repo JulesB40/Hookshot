@@ -1,4 +1,81 @@
-# Android checkpoint v0.9 — reuse Eden's Int64 lowering pass
+# Android checkpoint v0.10 — versioned owned-pool synchronization
+
+The user-pasted v0.9 report confirms **lowered-int64 PASS 64/64 rows** using the
+real Eden lowering pass/full backend, no Int64 type and no bitcasts. All shifts
+0..63 are covered. Native arithmetic still FAILs despite correctly encoded Int64
+literals. This validates the authored lowering route, not arbitrary guest code.
+[Device evidence](device-results/oneplus12-v09-key-results.txt).
+
+## New renderer component
+
+`vk_owned_pool.cpp/.h` adds a versioned capture/submission/write-back protocol for
+an independent mapped GPU buffer. Its three C ABI functions are exported by the
+actual ARM64 renderer module; the JNI test resolves and calls those exports.
+This is reusable renderer code, but is **not yet wired into replay pool import**.
+
+| Event | Required state / result |
+|---|---|
+| Capture | EMPTY or COMMITTED; copy guest snapshot under its writer lock, record version, flush GPU allocation |
+| Successful queue submission | CAPTURED with matching ticket → PENDING |
+| Completion not proved | NOT_READY; no invalidate or guest write |
+| Old/duplicate ticket | Refused before data access |
+| Fenced completion, unchanged CPU version | Invalidate, lock/check/copy/advance guest version → COMMITTED |
+| CPU version changed | CONFLICT; preserve newer guest bytes and retain GPU result |
+| Capture after conflict | Refused; no implicit overwrite or conflict resolution |
+
+Pool API calls must be serialized by an owner. Guest callbacks must use the same
+lock/generation as all guest writers. Write-back completion must come from an
+actual fence/timeline, not a guess. Tickets are scoped to one synchronization
+object's lifetime: replay retirement must prevent callbacks from an older pool
+reaching a reused object. Buffer metadata/context must remain alive and stable.
+
+CPU reads while GPU-owned, replay scheduling, pool retirement, dirty-page hooks
+and conflict resolution are **not integrated**. The existing no-host-import
+renderer restriction remains. This primitive does not prove full guest-pool
+coherence and must not be used to claim a playable game.
+
+## New phone GPU test
+
+The v0.10 test creates private authored guest RAM and an independent 4096-byte
+Vulkan buffer. It runs the exported renderer code through two real submissions:
+
+1. Capture CPU data, GPU-fill a subrange, reject early completion and in-flight
+   recapture, wait for its fence, commit write-back and verify every word.
+2. Capture again, reject a stale ticket, modify guest CPU data after capture,
+   wait for GPU completion, detect the version conflict, verify **all newer CPU
+   bytes are untouched** and the GPU result remains present. Reuse is refused.
+
+The guest data is a private in-memory array, never a game file or save. Teardown
+waits for the queue before releasing this test's own GPU objects. The test does
+not enable the missing host-import fallback for actual game pools.
+
+## Validation and phone procedure
+
+The actual ownership implementation passes host tests for normal completion,
+concurrent CPU updates, stale/early/duplicate completion, blocked reuse,
+noncoherent flush/invalidate failures, rejected write callbacks and counter
+limits. Address/undefined-behavior sanitizers pass with leak detection disabled:
+LeakSanitizer cannot run under this environment's ptrace. No leak-check result
+is claimed. Vulkan cache failures are injected on host; phone memory may be coherent.
+
+The ARM64 renderer links 186 sources without undefined symbols; all three new
+exports are present. JNI C warnings-as-errors, Java/DEX/APK/signing pass. APK
+version code 10 retains the same isolated package/key and requests zero
+permissions. All 14 existing safety/cache regressions pass.
+
+**v0.10 phone execution is pending.** Install over v0.9, wait, tap **Copy report**
+and paste it. The key new line is **Owned-pool sync GPU test**. Existing authored
+shader checks remain for regression. Termux build commands in README.md still
+apply; native phone compilation itself has not been performed by the developer.
+
+Remaining blockers: replay/guest synchronization integration, physical GPU
+pointer access, full Horizon runtime, task/mesh lowering, guest HID/audio and
+actual game launch. Game graphics, saves and FPS remain unverified. Original
+game files and installations are not opened or modified by this diagnostic.
+
+---
+
+# Historical Android checkpoint v0.9 — reuse Eden's Int64 lowering pass
 
 The user-pasted v0.8 report confirms **production-numeric conversions PASS 64/64**,
 but **native Int64 arithmetic FAIL 0/64** despite containing no bitcasts. For input

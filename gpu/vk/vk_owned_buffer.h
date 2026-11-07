@@ -24,7 +24,7 @@ static inline VkResult hk_buffer_create(const HkBufferOps* o, VkDevice d,
     const VkPhysicalDeviceMemoryProperties* p, VkDeviceSize size, VkBufferUsageFlags usage, HkOwnedBuffer* b) {
     memset(b,0,sizeof *b);
     if (!size) return VK_ERROR_INITIALIZATION_FAILED;
-    VkBufferCreateInfo ci={0}; ci.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO; ci.size=size; ci.usage=usage;
+    VkBufferCreateInfo ci; memset(&ci,0,sizeof ci); ci.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO; ci.size=size; ci.usage=usage;
     VkResult r=o->create(d,&ci,NULL,&b->buffer); if (r!=VK_SUCCESS) return r;
     VkMemoryRequirements req; o->requirements(d,b->buffer,&req);
     uint32_t best=UINT32_MAX; unsigned score=0;
@@ -35,9 +35,9 @@ static inline VkResult hk_buffer_create(const HkBufferOps* o, VkDevice d,
         if (s>score) { best=i; score=s; }
     }
     if (best==UINT32_MAX) { hk_buffer_destroy(o,d,b); return VK_ERROR_FEATURE_NOT_PRESENT; }
-    VkMemoryAllocateFlagsInfo address={0}; address.sType=VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+    VkMemoryAllocateFlagsInfo address; memset(&address,0,sizeof address); address.sType=VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
     address.flags=VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
-    VkMemoryAllocateInfo ai={0}; ai.sType=VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    VkMemoryAllocateInfo ai; memset(&ai,0,sizeof ai); ai.sType=VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     ai.pNext=(usage&VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)?&address:NULL;
     ai.allocationSize=req.size; ai.memoryTypeIndex=best;
     r=o->allocate(d,&ai,NULL,&b->memory);
@@ -51,12 +51,12 @@ static inline VkResult hk_buffer_create(const HkBufferOps* o, VkDevice d,
 static inline VkResult hk_buffer_flush(const HkBufferOps* o,VkDevice d,const HkOwnedBuffer* b) {
     if (!b->mapped) return VK_ERROR_MEMORY_MAP_FAILED;
     if (b->coherent) return VK_SUCCESS;
-    VkMappedMemoryRange r={0}; r.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE; r.memory=b->memory; r.size=VK_WHOLE_SIZE;
+    VkMappedMemoryRange r; memset(&r,0,sizeof r); r.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE; r.memory=b->memory; r.size=VK_WHOLE_SIZE;
     return o->flush(d,1,&r);
 }
 static inline VkResult hk_buffer_invalidate(const HkBufferOps* o,VkDevice d,const HkOwnedBuffer* b) {
     if (!b->mapped) return VK_ERROR_MEMORY_MAP_FAILED;
     if (b->coherent) return VK_SUCCESS;
-    VkMappedMemoryRange r={0}; r.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE; r.memory=b->memory; r.size=VK_WHOLE_SIZE;
+    VkMappedMemoryRange r; memset(&r,0,sizeof r); r.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE; r.memory=b->memory; r.size=VK_WHOLE_SIZE;
     return o->invalidate(d,1,&r);
 }

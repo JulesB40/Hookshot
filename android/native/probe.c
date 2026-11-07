@@ -43,6 +43,7 @@ static int extension(const VkExtensionProperties *all, uint32_t count, const cha
 #include "bringup_checks.h"
 #include "warp_checks.h"
 #include "layout_checks.h"
+#include "owned_pool_checks.h"
 
 static void run_probe(Probe *p) {
     const char *instance_extensions[] = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_ANDROID_SURFACE_EXTENSION_NAME};
@@ -220,6 +221,7 @@ static void run_probe(Probe *p) {
         note(p, "Vulkan clear submitted and presentation accepted (%ux%u). Visually verify a green strip.\n", extent.width, extent.height);
     else note(p, "Presentation failed: %d\n", result);
     test_owned_buffers(p);
+    test_owned_pool_sync(p);
     test_warp_partition(p);
     test_compact_gpu_layout(p);
 }

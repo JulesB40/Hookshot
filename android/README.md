@@ -5,10 +5,9 @@ connected during development. No game launch, correct game frame or playable
 performance has been verified.** This branch is a development checkpoint, not a
 completed Android port.
 
-The v0.8 report confirms production numeric conversions pass but native Int64
-arithmetic fails. v0.9 selects Eden's existing 32-bit Int64 lowering for the tested
-driver and adds a full-IR/backend check with all shift counts. Global memory and
-unsupported paired atomics remain guarded; game launch remains incomplete.
+The v0.9 phone report confirms the authored Eden Int64-to-32-bit lowering test
+passes all 64 rows. v0.10 adds a real Vulkan test of the renderer's versioned
+owned-pool synchronization component. Replay integration remains guarded.
 See [PORTING_PROGRESS.md](PORTING_PROGRESS.md).
 
 ## What the APK does
@@ -125,7 +124,7 @@ do not uninstall an existing app as a workaround.
    **Custom Turnip loading is not implemented**; setting a driver environment
    variable in Termux does not change the driver of this APK.
 
-For v0.9, tap **Copy report** and paste the complete result, including all eight
+For v0.10, tap **Copy report** and paste the complete result, including `Owned-pool sync GPU test` and the
 `Compact lookup ... GPU test` summaries and `Lookup ... heap trace`. Install as an update using the original key;
 do not uninstall or clear data. The compact layout is experimental and game
 execution remains unverified.
