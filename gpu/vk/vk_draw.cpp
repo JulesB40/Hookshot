@@ -1,3 +1,4 @@
+#include "vk_os.h"
 // Draws and dispatches: a program's pipeline layout (its stages' descriptors in Eden's order, as the SPIR-V back end
 // numbered them, one push-descriptor set when they fit), graphics pipelines (whatever Vulkan 1.3 and
 // VK_EXT_extended_dynamic_state3 take as dynamic state is dynamic; the rest is the key), each draw's descriptors
@@ -331,11 +332,7 @@ std::string pcache_path;
 std::atomic<int64_t> pcache_built_since_save{0};
 void pcache_init() {
     if (pcache) return;
-    char exe[MAX_PATH];
-    const DWORD n = GetModuleFileNameA(nullptr, exe, MAX_PATH);
-    std::string dir(exe, n);
-    dir = dir.substr(0, dir.find_last_of("\\/") + 1);
-    pcache_path = dir + "mkw_vk_pipelines.bin";
+    pcache_path = os::cache_path("mkw_vk_pipelines.bin");
     std::vector<uint8_t> data;
     if (FILE* f = fopen(pcache_path.c_str(), "rb")) {
         fseek(f, 0, SEEK_END);
@@ -423,6 +420,7 @@ bool depth_aspect(VkFormat f) {
 }
 
 // (hookshot) A driver's compiler that faults on a shader (amdvlk64.dll on a mesh program, Hookshot issue 26) costs that one draw, not the game
+#if defined(_WIN32)
 __declspec(noinline) VkResult guarded_graphics(VkPipelineCache cache, const VkGraphicsPipelineCreateInfo* ci, VkPipeline* pl) {
     __try {
         return vkCreateGraphicsPipelines(dev.device, cache, 1, ci, nullptr, pl);
@@ -437,6 +435,10 @@ __declspec(noinline) VkResult guarded_compute(VkPipelineCache cache, const VkCom
         return (VkResult)-77;   // (a fault in the driver, told apart from what it returns)
     }
 }
+#else
+VkResult guarded_graphics(VkPipelineCache cache, const VkGraphicsPipelineCreateInfo* ci, VkPipeline* pl) { return vkCreateGraphicsPipelines(dev.device, cache, 1, ci, nullptr, pl); }
+VkResult guarded_compute(VkPipelineCache cache, const VkComputePipelineCreateInfo* ci, VkPipeline* pl) { return vkCreateComputePipelines(dev.device, cache, 1, ci, nullptr, pl); }
+#endif
 VkPipeline build_graphics(const Program& p, const NvnState& s, const Targets& at, VkPrimitiveTopology topo, int part = -1);
 
 /// A target's write mask: the state's channel mask, nothing for a target the fragment shader leaves unwritten
@@ -469,10 +471,7 @@ std::mutex note_mu;
 FILE* note_file = nullptr;
 std::unordered_set<uint64_t> noted;   // (a pipeline once in the file, however many runs meet it)
 std::string pipe_notes_path() {
-    char exe[MAX_PATH];
-    const DWORD n = GetModuleFileNameA(nullptr, exe, MAX_PATH);
-    std::string dir(exe, n);
-    return dir.substr(0, dir.find_last_of("\\/") + 1) + "hookshot_pipelines.bin";
+    return os::cache_path("hookshot_pipelines.bin");
 }
 void pipeline_note(uint64_t key, const Program& p, const NvnState& s, const Targets& at, VkPrimitiveTopology topo) {
     static const bool off = getenv("RX_VK_NO_PROGRAM_CACHE") != nullptr;
@@ -496,7 +495,7 @@ void pipeline_note(uint64_t key, const Program& p, const NvnState& s, const Targ
             if (FILE* f = fopen(path.c_str(), "rb")) {
                 for (int64_t at = 16;; at += sizeof(PipeNote)) {
                     uint64_t k = 0;
-                    _fseeki64(f, at, SEEK_SET);
+                    os::seek(f, at, SEEK_SET);
                     if (fread(&k, 8, 1, f) != 1) break;
                     noted.insert(k);
                 }
@@ -668,7 +667,7 @@ VkPipeline build_graphics(const Program& p, const NvnState& s, const Targets& at
                 zero_used = true;
                 continue;
             }
-            va.push_back({i, a.stream, supported_vertex_format(f), a.offset & 0x3FFF});
+            va.push_back({i, a.stream, supported_vertex_format(f), (uint32_t)(a.offset & 0x3FFF)});
             stream_used[a.stream] = true;
         }
     for (uint32_t b = 0; b < 15; b++)
@@ -1337,7 +1336,7 @@ void build_descriptors(const NvnState& s, const Program& p) {
                     static const bool stretch = getenv("RX_VK_SSBO_STRETCH") != nullptr;
                     if (stretch && !d.is_written && addr && d.count == 1)
                         if (const uint64_t end = gpu_pool_end(base); end > base + n)
-                            n = std::max(n, std::min<uint64_t>(end - base, 64ull << 20) & ~3ull);
+                            n = std::max<uint64_t>(n, std::min<uint64_t>(end - base, 64ull << 20) & ~3ull);
                 }
                 const auto t0 = std::chrono::steady_clock::now();
                 // (hookshot) a storage buffer table's entries (count > 1, Info::global_tables): the ones past the table's
@@ -3575,10 +3574,8 @@ bool precompile_wanted() {
 /// Every shader of the game, before its first start (vk_shader.cpp, the seed): once for this translator
 void prepare_run(void (*progress)(size_t done, size_t total)) {
     const auto t0 = std::chrono::steady_clock::now();
-    char exe[MAX_PATH];
-    const DWORD exe_n = GetModuleFileNameA(nullptr, exe, MAX_PATH);
-    std::string path(exe, exe_n);
-    path = path.substr(0, path.find_last_of("\\/") + 1) + "hookshot_prepared.bin";
+    std::string path = os::cache_path("hookshot_prepared.bin");
+    if (path.empty()) return;
     const uint64_t stamp = program_cache_stamp();
     if (FILE* f = fopen(path.c_str(), "rb")) {
         uint64_t have = 0;
@@ -3610,7 +3607,7 @@ void prepare_run(void (*progress)(size_t done, size_t total)) {
     std::atomic<size_t> next{0}, done{0}, made{0}, libs{0};
     const auto worker = [&] {
         // (below normal, and half the CPUs, below: on all of them at High the driver's compiles froze the whole PC)
-        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+        os::priority_hint(-1);
         for (;;) {
             const size_t i = next++;
             if (i >= total) return;
@@ -3638,7 +3635,7 @@ void prepare_run(void (*progress)(size_t done, size_t total)) {
     for (unsigned i = 0; i < std::clamp(cpus / 2, 1u, 32u); i++) threads.emplace_back(worker);
     while (done.load() < total) {
         if (progress) progress(done.load(), total);
-        Sleep(100);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         if (next.load() >= total + threads.size()) break;
     }
     for (std::thread& t : threads) t.join();
@@ -3655,7 +3652,9 @@ void precompile_run(void (*progress)(size_t done, size_t total)) {
     const auto t0 = std::chrono::steady_clock::now();
     // (a start that dies in here would die in here every time, the notes being what it builds from: a player saw the console reach
     // 542 of 543 and the game close. The file says this step began and did not end: the next start lets the notes go and plays)
-    const std::string running = pipe_notes_path() + ".running";
+    const std::string notes_path = pipe_notes_path();
+    if (notes_path.empty()) return;
+    const std::string running = notes_path + ".running";
     if (FILE* f = fopen(running.c_str(), "rb")) {
         fclose(f);
         remove(running.c_str());
@@ -3731,7 +3730,7 @@ void precompile_run(void (*progress)(size_t done, size_t total)) {
     for (unsigned i = 0; i < std::min(cpus, 64u); i++) threads.emplace_back(worker);
     while (done.load() < total) {
         if (progress) progress(done.load(), total);
-        Sleep(100);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         if (next.load() >= total + threads.size()) break;
     }
     for (std::thread& t : threads) t.join();
@@ -4077,14 +4076,14 @@ int64_t draw_desc_reused() {
 }
 
 void pipeline_cache_save(bool force) {
-    if (!pcache || (!force && pcache_built_since_save < 32)) return;
+    if (!pcache || pcache_path.empty() || (!force && pcache_built_since_save < 32)) return;
     pcache_built_since_save = 0;
     // (on a thread of its own unless forced, at exit: ~100 MB fetched and written took the replay thread 100+ ms at
     // each scene change; the cache is internally synchronized, pipelines go on being built meanwhile)
     static std::atomic<bool> busy{false};
     if (busy.exchange(true)) {
         if (!force) return;
-        while (busy.load()) Sleep(1);   // (the one under way, then this one)
+        while (busy.load()) std::this_thread::sleep_for(std::chrono::milliseconds(1));   // (the one under way, then this one)
         busy = true;
     }
     auto save = [] {
@@ -4096,7 +4095,7 @@ void pipeline_cache_save(bool force) {
                 if (FILE* f = fopen(tmp.c_str(), "wb")) {
                     const bool ok = fwrite(data.data(), 1, n, f) == n;
                     fclose(f);
-                    if (ok) MoveFileExA(tmp.c_str(), pcache_path.c_str(), MOVEFILE_REPLACE_EXISTING);
+                    if (ok) os::replace_file(tmp.c_str(), pcache_path.c_str());
                 }
             }
         }

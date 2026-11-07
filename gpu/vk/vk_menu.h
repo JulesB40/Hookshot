@@ -20,6 +20,8 @@ struct Options {
 };
 extern Options opts;
 
+// 0 toggle, 1 up, 2 down, 3 left, 4 right, 5 close, 6 toggle.
+void menu_key(unsigned key, bool down);
 void menu_init();             // (the options from the file, once)
 void menu_tick();             // (each frame shown: the keys, while the game's window has the focus)
 bool menu_is_open();

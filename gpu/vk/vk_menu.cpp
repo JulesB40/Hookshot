@@ -1,3 +1,4 @@
+#include "vk_os.h"
 // The Insert menu. Drawn on the CPU (GDI text into a bitmap) and copied over the window's image at the last step of a present,
 // so it costs nothing while closed and it never touches the game's picture, nor what frame interpolation sees. Keys: Insert
 // opens and closes it, Up and Down choose, Left and Right change, Esc closes; the game gets no keyboard input while it is open.
@@ -12,7 +13,14 @@
 #include "vk_menu.h"
 
 namespace mkwvk {
+#if defined(_WIN32)
 HWND app_window();
+#endif
+static std::atomic<uint32_t> injected_keys{0};
+void menu_key(unsigned key, bool down) {
+    if (key >= 7) return;
+    if (down) injected_keys.fetch_or(1u << key); else injected_keys.fetch_and(~(1u << key));
+}
 
 Options opts;
 
@@ -47,7 +55,9 @@ const char* tx_handheld(int v) { return v ? "On (restart)" : "Off (restart)"; }
 const char* tx_ultrawide(int v) { return v ? "Monitor's shape (restart)" : "16:9 (restart)"; }
 
 Row rows[] = {
+#if defined(_WIN32)
     {"Fullscreen", &opts.fullscreen, 0, 1, 1, tx_onoff},
+#endif
     {"Frame generation", &opts.framegen, 0, 4, 1, tx_framegen},
     {"Frame pacing", &opts.pace, 0, 1, 1, tx_onoff},
     {"Resolution", &opts.resolution, 0, 4, 1, tx_resolution},
@@ -64,10 +74,7 @@ std::atomic<bool> open_now{false};
 int selected = 0;
 bool menu_refresh = false;
 std::string ini_path() {
-    char exe[MAX_PATH];
-    const DWORD n = GetModuleFileNameA(nullptr, exe, MAX_PATH);
-    std::string dir(exe, n);
-    return dir.substr(0, dir.find_last_of("\\/") + 1) + "hookshot_options.ini";
+    return os::cache_path("hookshot_options.ini");
 }
 const char* ini_key(const Row& r) {
     static char k[32];
@@ -95,6 +102,7 @@ Bitmap menu_bmp, fps_bmp;
 std::mutex bmp_mu;
 int scale_of(uint32_t h) { return std::max(1u, h / 720); }
 
+#if defined(_WIN32)
 void gdi_draw(Bitmap& out, uint32_t w, uint32_t h, void (*paint)(HDC, uint32_t, uint32_t, int), int scale) {
     BITMAPINFO bi{};
     bi.bmiHeader.biSize = sizeof bi.bmiHeader;
@@ -222,6 +230,73 @@ void redraw_menu(int s) {
     gdi_draw(menu_bmp, 360u * s, (uint32_t)((44 + kRows * 28 + 34) * s), paint_menu, s);
 }
 
+void redraw_fps(int s) { gdi_draw(fps_bmp, 120u * s, 54u * s, paint_fps, s); }
+#else
+#include "third_party/font8x8_basic.h"
+char fps_text[48] = "", fps_sub[32] = "";
+void pixel(Bitmap& b, int x, int y, uint32_t colour) {
+    if (x < 0 || y < 0 || (uint32_t)x >= b.w || (uint32_t)y >= b.h) return;
+    uint8_t* p = b.px.data() + ((size_t)y * b.w + (size_t)x) * 4;
+    p[0] = (uint8_t)(colour >> 16); p[1] = (uint8_t)(colour >> 8); p[2] = (uint8_t)colour; p[3] = 255;
+}
+void text(Bitmap& b, int x, int y, const char* message, uint32_t colour, int scale) {
+    for (; *message; ++message, x += 8 * scale) {
+        const unsigned ch = (unsigned char)*message;
+        if (ch >= 128) continue;
+        for (int gy = 0; gy < 8; ++gy) for (int gx = 0; gx < 8; ++gx)
+            if ((unsigned char)font8x8_basic[ch][gy] >> gx & 1)
+                for (int dy = 0; dy < scale; ++dy) for (int dx = 0; dx < scale; ++dx)
+                    pixel(b, x + gx * scale + dx, y + gy * scale + dy, colour);
+    }
+}
+void finish_bitmap(Bitmap& b) {
+    b.runs.clear();
+    for (uint32_t y = 0; b.keyed && y < b.h; ++y) for (uint32_t x = 0; x < b.w;) {
+        const uint8_t* p = b.px.data() + ((size_t)y * b.w + x) * 4;
+        if (!(p[0] | p[1] | p[2])) { ++x; continue; }
+        uint32_t end = x + 1;
+        while (end < b.w) {
+            const uint8_t* q = b.px.data() + ((size_t)y * b.w + end) * 4;
+            if (!(q[0] | q[1] | q[2])) break;
+            ++end;
+        }
+        VkBufferImageCopy copy{};
+        copy.bufferOffset = ((uint64_t)y * b.w + x) * 4; copy.bufferRowLength = b.w;
+        copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        copy.imageOffset = {(int32_t)x, (int32_t)y, 0}; copy.imageExtent = {end - x, 1, 1};
+        b.runs.push_back(copy); x = end;
+    }
+    if (dev.swap_format == VK_FORMAT_R8G8B8A8_UNORM || dev.swap_format == VK_FORMAT_R8G8B8A8_SRGB)
+        for (size_t i = 0; i < b.px.size(); i += 4) std::swap(b.px[i], b.px[i + 2]);
+    ++b.version;
+}
+void redraw_menu(int scale) {
+    std::lock_guard lock(bmp_mu);
+    Bitmap& b = menu_bmp;
+    b.w = 480u * scale; b.h = (60u + kRows * 28u) * scale;
+    b.px.assign((size_t)b.w * b.h * 4, 0);
+    for (uint32_t y = 0; y < b.h; ++y) for (uint32_t x = 0; x < b.w; ++x)
+        pixel(b, x, y, y >= (uint32_t)((40 + selected * 28) * scale) &&
+            y < (uint32_t)((68 + selected * 28) * scale) ? 0x2c4836 : 0x101412);
+    text(b, 12 * scale, 12 * scale, "Hookshot", 0xecf0ec, scale);
+    for (int i = 0; i < kRows; ++i) {
+        text(b, 12 * scale, (48 + i * 28) * scale, rows[i].name, 0xecf0ec, scale);
+        const char* value = rows[i].text(*rows[i].value);
+        text(b, (int)b.w - (int)strlen(value) * 8 * scale - 12 * scale, (48 + i * 28) * scale, value, 0x60b070, scale);
+    }
+    finish_bitmap(b);
+}
+void redraw_fps(int scale) {
+    std::lock_guard lock(bmp_mu);
+    Bitmap& b = fps_bmp;
+    b.w = 160u * scale; b.h = 40u * scale;
+    b.px.assign((size_t)b.w * b.h * 4, 0);
+    text(b, 0, 0, fps_text, 0x48ff6e, scale * 2);
+    text(b, 0, 24 * scale, fps_sub, 0xe2e8e2, scale);
+    finish_bitmap(b);
+}
+#endif
+
 std::atomic<int64_t> game_frames{0}, shown_frames{0};
 int cur_scale = 1;
 
@@ -294,6 +369,7 @@ void menu_note_frame(bool game_frame) {
 }
 
 // The Fullscreen row and F11 are one setting: the row asks the window's thread (host/display.c), F11 shows in the row
+#if defined(_WIN32)
 void fullscreen_tick() {
     static int applied = 0, settle = 0;
     const HWND main_window = app_window();
@@ -315,7 +391,9 @@ void fullscreen_tick() {
     }
 }
 
+#endif
 void menu_tick() {
+#if defined(_WIN32)
     fullscreen_tick();
     static bool held[7];
     static const int keys[7] = {VK_INSERT, VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, VK_ESCAPE, VK_F1};   // (F1: for keyboards without Insert)
@@ -329,6 +407,15 @@ void menu_tick() {
         press[i] = down && !held[i];
         held[i] = down;
     }
+#else
+    static bool held[7]{};
+    bool press[7]{};
+    const uint32_t keys = injected_keys.load();
+    for (int i = 0; i < 7; ++i) {
+        const bool down = (keys >> i & 1) != 0;
+        press[i] = down && !held[i]; held[i] = down;
+    }
+#endif
     const int scale = scale_of(dev.swap_extent.height);
     bool changed = scale != cur_scale || menu_refresh;
     menu_refresh = false;
@@ -361,7 +448,7 @@ void menu_tick() {
             last_game = g, last_shown = sh;
             next = now + 500000000;
             fps_bmp.keyed = true;
-            gdi_draw(fps_bmp, 120u * scale, 54u * scale, paint_fps, scale);
+            redraw_fps(scale);
         }
     }
 }

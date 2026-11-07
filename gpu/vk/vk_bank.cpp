@@ -12,7 +12,7 @@
 
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
-#include <windows.h>
+#include "vk_os.h"
 
 #include "vk_internal.h"
 #include "vk_state.h"
@@ -89,15 +89,11 @@ CsLayout cs_layout(const NvnState& s) {
 const void* descriptor_ok(const void* p, size_t n) {
     if (!p) return nullptr;
     const uintptr_t q = (uintptr_t)p, base = (uintptr_t)host->guest_base();
-    if (q >= base && q + n <= base + host->guest_size()) return p;
+    if (q >= base && n <= host->guest_size() && q - base <= host->guest_size() - n) return p;
     uint64_t avail = 0;
     if (const uint8_t* h = host->gpu_ptr((uint64_t)q, &avail); h && avail >= n) return h;
     // (the host's own copies: registrations made before the renderer started, kept by host/rx_backend.c)
-    MEMORY_BASIC_INFORMATION mi{};
-    if (VirtualQuery(p, &mi, sizeof mi) == sizeof mi && mi.State == MEM_COMMIT &&
-        (mi.Protect & (PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY)) && !(mi.Protect & PAGE_GUARD) &&
-        q + n <= (uintptr_t)mi.BaseAddress + mi.RegionSize)
-        return p;
+    if (os::readable_range(p, n)) return p;
     static int logged;
     if (logged++ < 8) logf("vk: descriptor outside guest memory: refused");
     return nullptr;

@@ -1,3 +1,4 @@
+#include "vk_os.h"
 // The worker threads (vk_jobs.h). As many as a third of the hardware threads (2 to 4): the game itself runs six
 // virtual cores, and the replay thread is one of the busiest.
 #include <algorithm>
@@ -20,8 +21,8 @@ std::atomic<int> pending{0};
 bool started = false;
 
 void worker() {
-    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
-    SetThreadDescription(GetCurrentThread(), L"mkw_vk worker");
+    os::priority_hint(-1);
+    os::name_thread("mkw_vk worker");
     for (;;) {
         std::function<void()> fn;
         {

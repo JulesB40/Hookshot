@@ -8,7 +8,11 @@
 #include <string>
 #include <vector>
 
+#if defined(_WIN32)
 #include <direct.h>
+#else
+#include <sys/stat.h>
+#endif
 
 #include "vk_dump.h"
 
@@ -264,7 +268,11 @@ void dump_present(int64_t presents) {
     seq = 0;
     const char* base = getenv("RX_VK_DUMP_DIR") ? getenv("RX_VK_DUMP_DIR") : getenv("RX_VK_SHOTS");
     dir = std::string(base ? base : ".") + "/dump_" + std::to_string(presents);
+#if defined(_WIN32)
     _mkdir(dir.c_str());
+#else
+    mkdir(dir.c_str(), 0700);
+#endif
     logf("vk: dumping the frame after present %lld to %s", (long long)presents, dir.c_str());
 }
 
