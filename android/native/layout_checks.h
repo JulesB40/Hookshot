@@ -1,6 +1,8 @@
-/* GPL-3.0-or-later. Executes the renderer's actual Eden warp emitters on authored data. */
+/* GPL-3.0-or-later. Executes the renderer's actual page lookup emitters on authored data. */
 static void test_compact_gpu_layout_mode(Probe* p,int bridge) {
-    note(p,"Lookup diagnostic mode: %s.\n",bridge?"bridge64":"pure32 (no Int64 capability)");
+    const char* names[]={"pure32","bridge64","numeric64","bitcast-pack","bitcast-unpack"};
+    const char* mode=names[bridge];
+    note(p,"Lookup diagnostic mode: %s.\n",mode);
     typedef size_t (*Emit)(uint32_t*,size_t,uint32_t);
     void* module=NULL; uint32_t* code=NULL; int submitted=0;
     VkShaderModule shader=VK_NULL_HANDLE;
@@ -32,7 +34,15 @@ static void test_compact_gpu_layout_mode(Probe* p,int bridge) {
 #define WARP_TRY(call) do { r=(call); if (r!=VK_SUCCESS) { note(p,"Compact page-index GPU test: %s failed (%d).\n",#call,r); goto cleanup; } } while (0)
     uint32_t fingerprint=2166136261u;
     for (size_t i=0;i<words;++i) { fingerprint^=code[i]; fingerprint*=16777619u; }
-    note(p,"Lookup %s shader: %zu words, fingerprint %#x.\n",bridge?"bridge64":"pure32",words,fingerprint);
+    note(p,"Lookup %s shader: %zu words, fingerprint %#x.\n",mode,words,fingerprint);
+    unsigned types64=0;
+    for (size_t at=5;at<words;) {
+        const uint32_t n=code[at]>>16,op=code[at]&65535u;
+        if (!n || n>words-at) { note(p,"Lookup %s shader audit: malformed word stream.\n",mode); goto cleanup; }
+        if (op==21u && n==4) { note(p,"Lookup %s integer type: id %u, width %u, signed %u.\n",mode,code[at+1],code[at+2],code[at+3]); types64+=code[at+2]==64; }
+        at+=n;
+    }
+    if ((bridge && types64!=1) || (!bridge && types64)) { note(p,"Lookup %s shader audit: unexpected Int64 type count %u.\n",mode,types64); goto cleanup; }
     VkShaderModuleCreateInfo sm={.sType=VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,.codeSize=words*4,.pCode=code};
     WARP_TRY(vkCreateShaderModule(p->device,&sm,NULL,&shader));
     VkPhysicalDeviceMemoryProperties memory; vkGetPhysicalDeviceMemoryProperties(p->physical,&memory);
@@ -101,17 +111,17 @@ static void test_compact_gpu_layout_mode(Probe* p,int bridge) {
         const uint32_t lo=(uint32_t)addresses[i],hi=(uint32_t)(addresses[i]>>32);
         const uint32_t delta=hi-(uint32_t)(HK_GUEST_PAGES_BASE>>32),hit=index!=UINT64_MAX;
         const uint32_t expected[16]={lo,hi,hit,(uint32_t)index,bridge?(uint32_t)index:0xf00d0000u,
-            lo,hi,delta,delta<<20,lo>>12,hit?0x12345678u:0xabcdef01u,0xffffffffu,0x12345678u,i,0u,0x75000006u};
+            lo,hi,delta,delta<<20,lo>>12,hit?0x12345678u:0xabcdef01u,0xffffffffu,0x12345678u,i,0u,0x75000007u};
         int bad=0;
         for (unsigned j=0;j<16;++j) if (row[j]!=expected[j]) {
-            if (!bad && failures<3) note(p,"Lookup %s mismatch row %u col %u: got %#x expected %#x.\n",bridge?"bridge64":"pure32",i,j,row[j],expected[j]);
+            if (!bad && failures<3) note(p,"Lookup %s mismatch row %u col %u: got %#x expected %#x.\n",mode,i,j,row[j],expected[j]);
             bad=1;
         }
         failures+=(unsigned)bad;
         if (i==2) note(p,"Lookup %s heap trace: in=%#x/%#x hit=%u direct=%#x bridge=%#x round=%#x/%#x delta=%#x shift=%#x lowpage=%#x select=%#x ones=%#x literal=%#x row=%u widehi=%#x tag=%#x.\n",
-            bridge?"bridge64":"pure32",row[0],row[1],row[2],row[3],row[4],row[5],row[6],row[7],row[8],row[9],row[10],row[11],row[12],row[13],row[14],row[15]);
+            mode,row[0],row[1],row[2],row[3],row[4],row[5],row[6],row[7],row[8],row[9],row[10],row[11],row[12],row[13],row[14],row[15]);
     }
-    note(p,"Compact lookup %s GPU test: %s (%u/64 rows match all 16 words).\n",bridge?"bridge64":"pure32",failures?"FAIL":"PASS",64-failures);
+    note(p,"Compact lookup %s GPU test: %s (%u/64 rows match all 16 words).\n",mode,failures?"FAIL":"PASS",64-failures);
     note(p,"Lookup diagnostics only; production compatibility and physical GPU pointer dereference remain unverified.\n");
 cleanup:
     if (submitted) vkQueueWaitIdle(p->queue);
@@ -127,6 +137,5 @@ cleanup:
 }
 
 static void test_compact_gpu_layout(Probe* p) {
-    test_compact_gpu_layout_mode(p,0);
-    test_compact_gpu_layout_mode(p,1);
+    for (int mode=0;mode<5;++mode) test_compact_gpu_layout_mode(p,mode);
 }

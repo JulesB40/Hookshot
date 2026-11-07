@@ -5,9 +5,9 @@ connected during development. No game launch, correct game frame or playable
 performance has been verified.** This branch is a development checkpoint, not a
 completed Android port.
 
-The v0.6 checkpoint adds pure32/bridge64 GPU lookup traces and a Copy report
-button. The v0.5 screenshot still shows a GPU page-index failure; the exact cause
-is unresolved. Authored warp and CPU high-address checks pass on the phone.
+The v0.6 device report confirms the 32-bit lookup passes while the Int64 bridge
+fails. v0.7 compares five conversion paths and guards guest Int64/global-memory
+shaders on the known failing driver; a production fallback is not yet verified.
 See [PORTING_PROGRESS.md](PORTING_PROGRESS.md).
 
 ## What the APK does
@@ -124,8 +124,8 @@ do not uninstall an existing app as a workaround.
    **Custom Turnip loading is not implemented**; setting a driver environment
    variable in Termux does not change the driver of this APK.
 
-For v0.6, tap **Copy report** and paste the complete result, including both
-`Compact lookup pure32/bridge64 GPU test` summaries and `Lookup ... heap trace`. Install as an update using the original key;
+For v0.7, tap **Copy report** and paste the complete result, including all five
+`Compact lookup ... GPU test` summaries and `Lookup ... heap trace`. Install as an update using the original key;
 do not uninstall or clear data. The compact layout is experimental and game
 execution remains unverified.
 

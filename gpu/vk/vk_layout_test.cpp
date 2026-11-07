@@ -11,6 +11,7 @@
 #define HK_LAYOUT_EXPORT __attribute__((visibility("default")))
 #endif
 extern "C" HK_LAYOUT_EXPORT size_t hookshot_vk_layout_test_spirv(uint32_t* output,size_t capacity,uint32_t reserved) {
+    if (reserved>4) return 0;
     const bool bridge=reserved!=0;
     using namespace Shader;
     using namespace Shader::Backend::SPIRV;
@@ -37,7 +38,8 @@ extern "C" HK_LAYOUT_EXPORT size_t hookshot_vk_layout_test_spirv(uint32_t* outpu
         const Id low=ctx.OpLoad(ctx.U32[1],at(0)), high=ctx.OpLoad(ctx.U32[1],at(1));
         const auto direct=EmitGuestPageLookup32(ctx,low,high);
         Id round_low=low,round_high=high,bridge_index=ctx.Const(0xf00d0000u),wide_high=ctx.Const(0u);
-        if (bridge) {
+        if (reserved==1) {
+            // Exact existing production bridge: bitcasts plus UConvert widening/narrowing.
             const Id addr=ctx.OpBitcast(ctx.U64,ctx.OpCompositeConstruct(ctx.U32[2],low,high));
             const Id round=ctx.OpBitcast(ctx.U32[2],addr);
             round_low=ctx.OpCompositeExtract(ctx.U32[1],round,0u);
@@ -45,6 +47,27 @@ extern "C" HK_LAYOUT_EXPORT size_t hookshot_vk_layout_test_spirv(uint32_t* outpu
             const auto wide=EmitGuestPageLookup(ctx,addr);
             bridge_index=ctx.OpSelect(ctx.U32[1],wide.inside,ctx.OpUConvert(ctx.U32[1],wide.index),ctx.Const(0xffffffffu));
             wide_high=ctx.OpCompositeExtract(ctx.U32[1],ctx.OpBitcast(ctx.U32[2],wide.index),1u);
+        } else if (bridge) {
+            // Alternate pack/unpack paths are diagnostic candidates, not production workarounds.
+            const bool numeric_pack=reserved!=3, numeric_unpack=reserved!=4;
+            const auto pack=[&](Id lo,Id hi) {
+                if (!numeric_pack) return ctx.OpBitcast(ctx.U64,ctx.OpCompositeConstruct(ctx.U32[2],lo,hi));
+                const Id high64=ctx.OpShiftLeftLogical(ctx.U64,ctx.OpUConvert(ctx.U64,hi),ctx.Const(32u));
+                return ctx.OpBitwiseOr(ctx.U64,ctx.OpUConvert(ctx.U64,lo),high64);
+            };
+            const auto unpack=[&](Id value) {
+                if (!numeric_unpack) {
+                    const Id words=ctx.OpBitcast(ctx.U32[2],value);
+                    return std::pair{ctx.OpCompositeExtract(ctx.U32[1],words,0u),ctx.OpCompositeExtract(ctx.U32[1],words,1u)};
+                }
+                return std::pair{ctx.OpUConvert(ctx.U32[1],value),
+                    ctx.OpUConvert(ctx.U32[1],ctx.OpShiftRightLogical(ctx.U64,value,ctx.Const(32u)))};
+            };
+            const auto round=unpack(pack(low,high)); round_low=round.first; round_high=round.second;
+            const auto lookup=EmitGuestPageLookup32(ctx,round_low,round_high);
+            const auto index=unpack(pack(lookup.index,ctx.Const(0u)));
+            bridge_index=ctx.OpSelect(ctx.U32[1],lookup.inside,index.first,ctx.Const(0xffffffffu));
+            wide_high=index.second;
         }
         const Id delta=ctx.OpISub(ctx.U32[1],high,ctx.Const(static_cast<u32>(HK_GUEST_PAGES_BASE>>32)));
         const Id trace[]={ctx.OpSelect(ctx.U32[1],direct.inside,ctx.Const(1u),ctx.Const(0u)),
@@ -52,7 +75,7 @@ extern "C" HK_LAYOUT_EXPORT size_t hookshot_vk_layout_test_spirv(uint32_t* outpu
             round_low,round_high,delta,ctx.OpShiftLeftLogical(ctx.U32[1],delta,ctx.Const(20u)),
             ctx.OpShiftRightLogical(ctx.U32[1],low,ctx.Const(12u)),
             ctx.OpSelect(ctx.U32[1],direct.inside,ctx.Const(0x12345678u),ctx.Const(0xabcdef01u)),
-            ctx.Const(0xffffffffu),ctx.Const(0x12345678u),index,wide_high,ctx.Const(0x75000006u)};
+            ctx.Const(0xffffffffu),ctx.Const(0x12345678u),index,wide_high,ctx.Const(0x75000007u)};
         for (uint32_t i=0;i<14;++i) ctx.OpStore(at(i+2),trace[i]);
         ctx.OpReturn(); ctx.OpFunctionEnd();
         ctx.AddEntryPoint(spv::ExecutionModel::GLCompute,fn,"main",ctx.interfaces);

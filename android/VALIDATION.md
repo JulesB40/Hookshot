@@ -1,6 +1,39 @@
 # Validation — 2026-11-07
 
-## v0.6 build checkpoint
+## v0.7 build checkpoint
+
+- 184-source ARM64 renderer link with no undefined symbols, warning-clean JNI C,
+  Java/DEX/APK build and signature verification pass. Same package/certificate,
+  version code 7, zero requested permissions.
+- All five diagnostic shaders pass `spirv-val --target-env vulkan1.1` and host
+  evaluation on 3,088 boundary/random addresses per mode for both layouts.
+- Host HLE allocator tests, actual Android allocator compilation and all 14
+  existing safety/cache regressions pass. `git diff --check` clean.
+- Exact-driver Int64/global-memory rejection compiles; no actual game shader run.
+- **v0.7 phone execution pending; no numeric conversion fallback is certified.**
+
+APK SHA256: `f854d10f24a067c55a2b56d703045c00769da419481a47db234a8b407793d223`.
+
+## User-supplied v0.6 text report
+
+[Complete report](device-results/oneplus12-v06-user-report.txt), pasted by the user
+from the diagnostic; no direct ADB test. Device/driver match earlier runs.
+
+| Check | Observed result |
+|---|---|
+| Pure32 lookup | **PASS 64/64 rows, all 16 words**. |
+| Production-style bridge64 | **FAIL 4/64 rows match**. |
+| Heap-base direct index | 0, correct. |
+| Heap-base bridge index | `0xffff`, expected 0. |
+| Below-heap roundtrip low word | `0xffff`, expected `0xffffffff`. |
+| Owned staging / warp test | PASS. |
+| CPU high-address / arena page zeroing | PASS. |
+| Actual game launch, graphics, saves, FPS | NOT TESTED. |
+
+Pure32 shader fingerprint `0xb3d2526f`; bridge64 `0x9d465d16`. Fingerprints are
+provenance, not evidence that differing compiler-generated ID order is invalid.
+
+## Historical v0.6 build checkpoint
 
 - ARM64 renderer: 184 real sources linked with `--no-undefined`. JNI C with
   `-Wall -Wextra -Werror`, Java compilation, DEX and APK packaging pass.

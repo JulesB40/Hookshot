@@ -6,7 +6,7 @@ from pathlib import Path
 import random
 import struct
 
-def check_layout(path,grammar_path,android,bridge=False):
+def check_layout(path,grammar_path,android,bridge=0):
     grammar=json.loads(Path(grammar_path).read_text())
     names={i['opcode']:i['opname'] for i in grammar['instructions']}
     words=struct.unpack('<'+'I'*(Path(path).stat().st_size//4),Path(path).read_bytes())
@@ -31,7 +31,7 @@ def check_layout(path,grammar_path,android,bridge=False):
     if not bridge: assert ('int',64) not in types.values(),'Pure32 test must not declare 64-bit integers'
     # Regression: this lookup must not reintroduce 64-bit arithmetic/select chains.
     for op,a in body:
-        if op.startswith(('OpI','OpShift','OpBitwise','OpSelect')) and op!='OpIEqual':
+        if bridge in (0,1) and op.startswith(('OpI','OpShift','OpBitwise','OpSelect')) and op!='OpIEqual':
             assert types.get(a[0])!=('int',64),('64-bit arithmetic reintroduced',op)
     def run(addr):
         env=dict(constants);data=[addr&0xffffffff,addr>>32]+[0xcdcdcdcd]*14
@@ -87,6 +87,6 @@ def check_layout(path,grammar_path,android,bridge=False):
         lo=address&0xffffffff;hi=address>>32;delta=(hi-16)&0xffffffff
         hit=int(expected is not None);index=expected if expected is not None else 0xffffffff
         trace=[hit,index,index if bridge else 0xf00d0000,lo,hi,delta,(delta<<20)&0xffffffff,lo>>12,
-            0x12345678 if hit else 0xabcdef01,0xffffffff,0x12345678,0,0,0x75000006]
+            0x12345678 if hit else 0xabcdef01,0xffffffff,0x12345678,0,0,0x75000007]
         assert run(address)==trace,(hex(address),run(address),trace)
     print(f'PASS: generated page-index shader semantics on {len(samples)} boundary/random addresses; no 64-bit page arithmetic; GPU execution not tested')

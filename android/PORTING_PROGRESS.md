@@ -1,4 +1,62 @@
-# Android checkpoint v0.6 — isolate the failing lookup
+# Android checkpoint v0.7 — Int64 conversion isolation
+
+The user-pasted v0.6 report establishes a useful split on OnePlus 12 / Adreno 750
+with driver `0x802fa029`: **pure32 lookup PASS 64/64**, but **bridge64 FAIL 4/64**.
+For `0x1000000000`, direct index is correctly 0 while the converted index is
+`0xffff`. At the address immediately below the heap, a bitcast roundtrip returns
+low word `0xffff` instead of `0xffffffff`. CPU arena, owned staging and warp
+partition tests still PASS. Full report: [device-results/oneplus12-v06-user-report.txt](device-results/oneplus12-v06-user-report.txt).
+
+This narrows the failure to the path involving 64-bit values/conversions. It
+does not yet identify which operation or driver/compiler component is responsible.
+The differing host/device shader fingerprints alone are not proof of a fault:
+compiler evaluation order can change instruction/constant ID ordering.
+
+## Implementation
+
+The Android renderer now explicitly refuses guest Int64/global-memory shaders
+on the exact tested vendor/device/driver tuple until a verified fallback exists.
+It does not lower unsupported memory loads to zeros. Other driver versions are
+not certified by this guard; this is a known-failure stop, not a capability test.
+Existing mesh/import restrictions remain in place. Guard compilation passes;
+actual guest shader execution remains unavailable.
+
+The v0.7 APK runs five 64-row, 16-word diagnostic variants:
+
+| Mode | Pack low/high into Int64 | Unpack Int64 |
+|---|---|---|
+| pure32 | No Int64 values | No Int64 values |
+| bridge64 | Existing production bitcasts/conversions | Existing production bitcasts/conversions |
+| numeric64 | UConvert, shifts and OR | UConvert and shift |
+| bitcast-pack | Bitcast | UConvert and shift |
+| bitcast-unpack | UConvert, shifts and OR | Bitcast |
+
+These extra paths are diagnostic candidates only; no alternate conversion has
+been enabled in production. The APK reports queried/enabled shaderInt64 and audits
+integer widths in the actual emitted phone SPIR-V before pipeline creation. This
+helps distinguish bytecode-generation issues from later execution. The report
+continues to include the first mismatch columns, heap traces and shader fingerprints.
+
+## Validation / next phone run
+
+All five generated shaders pass Vulkan validation and 3,088 host semantic cases
+per variant, for both Android and desktop layouts. The 184-source renderer links
+for ARM64, JNI C builds with warnings as errors, and the APK keeps the existing
+certificate/package with version code 7 and zero requested permissions. Host HLE
+allocator/ARM64 compilation and 14 safety/cache regressions pass.
+
+v0.7 has not run on the phone yet. Install it over v0.6, wait for completion, tap
+**Copy report**, and paste the full result. No game files or save data are imported.
+The same Termux build instructions in README.md apply; native phone compilation
+has not been performed by the developer.
+
+Physical GPU pointer dereference, guest-pool synchronization, the full Horizon
+runtime, mesh/task lowering, guest HID/audio and actual game launch remain
+incomplete. Pure32 diagnostic success is not proof that real game shaders work.
+
+---
+
+# Historical Android checkpoint v0.6 — isolate the failing lookup
 
 The user supplied a v0.5 screenshot at 22:26: compact lookup still FAILs at row 2,
 heap address `0x1000000000`, hit 1, index `0xff` instead of 0. CPU high-address,

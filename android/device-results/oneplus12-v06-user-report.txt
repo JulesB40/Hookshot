@@ -1,0 +1,46 @@
+Provenance: report pasted by the user from the v0.6 APK; no direct ADB test.
+
+Device: OnePlus CPH2581
+Android: 16 / API 36
+ABIs: arm64-v8a
+GPU: Adreno (TM) 750
+Vendor: 0x5143; device: 0x43051401; driver: 0x802fa029
+Vulkan: 1.3.128
+Task/mesh features: no / no
+Host memory import extension: no
+ASTC LDR: yes; BC: yes
+Subgroup lanes: 64
+Subgroup operation stages 0x30; operations 0xbf
+Subgroup control: yes; range 64-128; required-size stages 0x20; full compute yes
+Can request 32 lanes: compute no, vertex no, fragment no (query only, not shader execution).
+GAME BLOCKER: task/mesh to compute+indirect lowering is not implemented. Draws must not be silently dropped.
+GAME BLOCKER: coherent guest buffer upload/write-back fallback needs validation.
+Guest warp compatibility: partitioned 32-lane path configured; see actual GPU test below. Other stages/game shaders remain unverified.
+Vulkan clear submitted and presentation accepted (3008x100). Visually verify a green strip.
+Owned staging roundtrip: PASS (4096 bytes, copy + GPU overwrite + CPU readback; coherent yes/yes).
+Guest-pool synchronization remains incomplete; this tests transfer mechanics only.
+32-lane partition GPU test: PASS (128 invocations; actual Eden lane ID, ballots, votes, masks and shuffles).
+Only this synthetic compute test passed; guest shaders and other stages remain unverified.
+Lookup diagnostic mode: pure32 (no Int64 capability).
+Lookup pure32 shader: 709 words, fingerprint 0xb3d2526f.
+Lookup pure32 heap trace: in=0/0x10 hit=1 direct=0 bridge=0xf00d0000 round=0/0x10 delta=0 shift=0 lowpage=0 select=0x12345678 ones=0xffffffff literal=0x12345678 row=2 widehi=0 tag=0x75000006.
+Compact lookup pure32 GPU test: PASS (64/64 rows match all 16 words).
+Lookup diagnostics only; production compatibility and physical GPU pointer dereference remain unverified.
+Lookup diagnostic mode: bridge64.
+Lookup bridge64 shader: 859 words, fingerprint 0x9d465d16.
+Lookup bridge64 mismatch row 1 col 5: got 0xffff expected 0xffffffff.
+Lookup bridge64 mismatch row 2 col 4: got 0xffff expected 0.
+Lookup bridge64 heap trace: in=0/0x10 hit=1 direct=0 bridge=0xffff round=0/0x10 delta=0 shift=0 lowpage=0 select=0x12345678 ones=0xffffffff literal=0x12345678 row=2 widehi=0 tag=0x75000006.
+Lookup bridge64 mismatch row 3 col 4: got 0xffff expected 0x100000.
+Compact lookup bridge64 GPU test: FAIL (4/64 rows match all 16 words).
+Lookup diagnostics only; production compatibility and physical GPU pointer dereference remain unverified.
+Renderer module: loaded, mkwvk_init export found; game runtime not started.
+Compact guest arena: 256 GiB at 0x1632b30000; GPU upper window 0x3f00000000.
+Compact SDK VAMM window: 96..160 GiB (reserved by experimental host allocator).
+Compact high-address CPU test: PASS (system, image, heap, VAMM edges, upper GPU window, last page; no alias; zeroing).
+Arena page/zeroing check: PASS; host page 4096 bytes.
+Experimental compact layout only: real guest pointers/allocations and game execution remain unverified.
+
+NOT TESTED: game launch, NVN replay, graphics correctness, saves, FPS.
+No original game files were opened. No storage permission is requested.
+Report saved in isolated app storage: probe-520650620042024029.txt

@@ -40,7 +40,7 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
             }
         });
         TextView title = new TextView(this);
-        title.setText("Hookshot • Android ARM64 v0.6\nGame runtime not ported — this APK tests graphics and input only.");
+        title.setText("Hookshot • Android ARM64 v0.7\nGame runtime not ported — this APK tests graphics and input only.");
         title.setTextSize(18);
         root.addView(title);
         input = new TextView(this);

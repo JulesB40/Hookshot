@@ -607,6 +607,11 @@ std::unordered_map<uint64_t, std::vector<Code>> codes;                          
 const Shader::Profile& profile(const Shader::IR::Program& program) {
     static const Shader::Profile p = make_profile();
     const auto& info=program.info;
+#if defined(__ANDROID__)
+    if (dev.props.vendorID==0x5143 && dev.props.deviceID==0x43051401 &&
+        dev.props.driverVersion==0x802fa029 && (info.uses_int64 || info.uses_global_memory))
+        throw std::runtime_error("Adreno driver failed validated Int64 bridge tests; guest Int64/global memory requires a verified fallback");
+#endif
     if ((info.uses_subgroup_vote || info.uses_subgroup_invocation_id || info.uses_subgroup_shuffles ||
          info.uses_subgroup_mask || info.uses_quad_shuffles || info.uses_cooperative_matrix) &&
         (!p.SupportsSubgroupStage(program.stage) || dev.subgroup_size<32 || dev.subgroup_max>128))
